@@ -23,12 +23,216 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Write-Info {
+    param([string]$Message)
+    Write-Host $Message
+}
+
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         throw "This script must be run as Administrator."
     }
+}
+
+function Get-NodeMajor {
+    try {
+        $version = & node -p "process.versions.node.split('.')[0]" 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $version) { return 0 }
+        return [int]$version
+    }
+    catch {
+        return 0
+    }
+}
+
+function Test-Command {
+    param([string]$Name)
+    return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
+}
+
+function Test-NativeAddonBuildNeeded {
+    $packageJson = Join-Path $repoRoot "package.json"
+    if (-not (Test-Path $packageJson)) {
+        return $false
+    }
+
+    $contents = Get-Content $packageJson -Raw
+    return $contents -match '"better-sqlite3"\s*:'
+}
+
+function Get-PythonExecutable {
+    $candidates = @()
+
+    if ($env:PYTHON) { $candidates += $env:PYTHON }
+    if (Test-Command "python") { $candidates += (Get-Command python).Source }
+    if (Test-Command "py") { $candidates += (Get-Command py).Source }
+
+    $pythonRoots = @(
+        $env:LOCALAPPDATA,
+        [Environment]::GetFolderPath("ProgramFiles"),
+        [Environment]::GetFolderPath("ProgramFilesX86")
+    ) | Where-Object { $_ }
+
+    foreach ($root in $pythonRoots) {
+        $candidates += @(
+            (Join-Path $root "Programs\Python\Python312\python.exe"),
+            (Join-Path $root "Programs\Python\Python311\python.exe"),
+            (Join-Path $root "Programs\Python\Python310\python.exe"),
+            (Join-Path $root "Python312\python.exe"),
+            (Join-Path $root "Python311\python.exe"),
+            (Join-Path $root "Python310\python.exe")
+        )
+    }
+
+    foreach ($candidate in $candidates | Select-Object -Unique) {
+        if (-not $candidate -or -not (Test-Path $candidate)) {
+            continue
+        }
+
+        try {
+            & $candidate -c "import sys; print(sys.version_info[0])" 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                return $candidate
+            }
+        }
+        catch {
+            continue
+        }
+    }
+
+    return $null
+}
+
+function Test-PythonAvailable {
+    return [bool](Get-PythonExecutable)
+}
+
+function Test-VsBuildToolsAvailable {
+    if (Test-Command "cl.exe") { return $true }
+
+    $programFilesX86 = [Environment]::GetFolderPath("ProgramFilesX86")
+    $vsWhere = Join-Path $programFilesX86 "Microsoft Visual Studio\Installer\vswhere.exe"
+    if (Test-Path $vsWhere) {
+        $installPath = & $vsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
+        return [bool]$installPath
+    }
+
+    return $false
+}
+
+function Test-NativeBuildPrereqsPresent {
+    return (Test-PythonAvailable) -and (Test-VsBuildToolsAvailable)
+}
+
+function Invoke-WingetInstall {
+    param(
+        [Parameter(Mandatory = $true)][string]$Id,
+        [string]$Source = "winget"
+    )
+
+    if (-not (Test-Command "winget")) {
+        throw "winget is not installed. Install Python and Visual Studio Build Tools manually, then re-run this script."
+    }
+
+    Write-Info "Installing $Id via winget ..."
+    & winget install --id $Id -e --source $Source --accept-source-agreements --accept-package-agreements
+    if ($LASTEXITCODE -ne 0) {
+        throw "winget install failed for $Id."
+    }
+}
+
+function Install-PythonIfNeeded {
+    $pythonExe = Get-PythonExecutable
+    if ($pythonExe) {
+        $env:PYTHON = $pythonExe
+        $env:npm_config_python = $pythonExe
+        Write-Info "Python is already available."
+        return
+    }
+
+    Invoke-WingetInstall -Id "Python.Python.3.12"
+
+    $pythonExe = Get-PythonExecutable
+    if (-not $pythonExe) {
+        throw "Python was installed but could not be located. Re-open an elevated PowerShell window and re-run the installer."
+    }
+
+    $env:PYTHON = $pythonExe
+    $env:npm_config_python = $pythonExe
+}
+
+function Install-VisualStudioBuildToolsIfNeeded {
+    if (Test-VsBuildToolsAvailable) {
+        Write-Info "Visual Studio C++ build tools are already available."
+        return
+    }
+
+    $bootstrapper = Join-Path $env:TEMP "vs_buildtools.exe"
+    $url = "https://aka.ms/vs/17/release/vs_buildtools.exe"
+    Write-Info "Downloading Visual Studio Build Tools bootstrapper ..."
+    Invoke-WebRequest -Uri $url -OutFile $bootstrapper
+
+    Write-Info "Installing Visual Studio Build Tools C++ workload ..."
+    $programFilesX86 = [Environment]::GetFolderPath("ProgramFilesX86")
+    $installPath = Join-Path $programFilesX86 "Microsoft Visual Studio\2022\BuildTools"
+    $args = @(
+        "--quiet",
+        "--wait",
+        "--norestart",
+        "--nocache",
+        "--add", "Microsoft.VisualStudio.Workload.VCTools",
+        "--includeRecommended",
+        "--installPath", $installPath
+    )
+    $proc = Start-Process -FilePath $bootstrapper -ArgumentList $args -Wait -PassThru
+    if ($proc.ExitCode -ne 0) {
+        throw "Visual Studio Build Tools installation failed with exit code $($proc.ExitCode)."
+    }
+}
+
+function Set-NativeBuildEnvironment {
+    $pythonExe = Get-PythonExecutable
+    if ($pythonExe) {
+        $env:PYTHON = $pythonExe
+        $env:npm_config_python = $pythonExe
+    }
+
+    $env:npm_config_msvs_version = "2022"
+}
+
+function Ensure-NativeBuildPrereqs {
+    if (-not (Test-NativeAddonBuildNeeded)) {
+        Write-Info "No native addon build detected in package.json."
+        return
+    }
+
+    if (Test-NativeBuildPrereqsPresent) {
+        Write-Info "Native build prerequisites are already present."
+        Set-NativeBuildEnvironment
+        return
+    }
+
+    Write-Info "Native addon build detected; installing missing prerequisites for Node $([string](Get-NodeMajor))..."
+    Install-PythonIfNeeded
+    Install-VisualStudioBuildToolsIfNeeded
+    Set-NativeBuildEnvironment
+
+    if (-not (Test-NativeBuildPrereqsPresent)) {
+        throw "Native build prerequisites are still missing after installation."
+    }
+}
+
+function Invoke-NpmInstallAndBuild {
+    Push-Location $repoRoot
+    try {
+        & $npmCmd install
+        if ($LASTEXITCODE -ne 0) { throw "npm install failed." }
+        & $npmCmd run build
+        if ($LASTEXITCODE -ne 0) { throw "npm run build failed." }
+    }
+    finally { Pop-Location }
 }
 
 Assert-Administrator
@@ -50,15 +254,22 @@ if ($inUse) {
 
 # --- Build -------------------------------------------------------------------
 if (-not $SkipBuild) {
-    Write-Host "Installing dependencies and building (this can take a minute)..."
-    Push-Location $repoRoot
+    Write-Info "Preparing build prerequisites and installing dependencies (this can take a minute)..."
+    Ensure-NativeBuildPrereqs
+
     try {
-        & $npmCmd install
-        if ($LASTEXITCODE -ne 0) { throw "npm install failed." }
-        & $npmCmd run build
-        if ($LASTEXITCODE -ne 0) { throw "npm run build failed." }
+        Invoke-NpmInstallAndBuild
     }
-    finally { Pop-Location }
+    catch {
+        if (-not (Test-NativeAddonBuildNeeded)) {
+            throw
+        }
+
+        Write-Info "Initial npm install/build failed; retrying after refreshing native prerequisites..."
+        Install-PythonIfNeeded
+        Install-VisualStudioBuildToolsIfNeeded
+        Invoke-NpmInstallAndBuild
+    }
 }
 
 $standalone = Join-Path $repoRoot ".next\standalone"

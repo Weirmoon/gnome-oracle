@@ -44,6 +44,7 @@ apt_install() {
 
 ensure_base_packages() {
   log "Installing base packages..."
+  log "Python is only needed at build time for native Node modules like better-sqlite3."
   apt-get update
   apt_install ca-certificates curl gnupg rsync build-essential python3 make g++ nginx
 }
