@@ -167,6 +167,11 @@ export default function GnomeModel({
   const heldHand: "L" | "R" = staff ? "L" : "R";
   const seg = tier === "low" ? 0.6 : 1;
 
+  // Body variants that replace or drop a base part.
+  const variant = appearance.variant ?? "gnome";
+  const noBeard = variant === "lady" || variant === "young-apprentice" || variant === "goblin";
+  const noLegs = variant === "ghost";
+
   // Rounded, slightly wide head — an unsubdivided icosahedron silhouettes as a
   // hard hexagon with a pointed chin, which is nothing like the reference.
   const headGeo = useMemo(
@@ -464,18 +469,20 @@ export default function GnomeModel({
       </group>
 
       {/* Legs + boots below the tunic hem — the break that makes the
-          silhouette read chibi instead of as a floor-length cone. */}
-      {[-0.21, 0.21].map((x) => (
-        <group key={x}>
-          <mesh geometry={legGeo} material={mats.dark} position={[x, legTop - 0.1, 0]} scale={[0.8, 0.7, 0.8]} />
-          <mesh
-            geometry={bootGeo}
-            material={mats.dark}
-            position={[x, GROUND_Y + 0.1, 0.05]}
-            scale={[0.85, 0.6, 1.3]}
-          />
-        </group>
-      ))}
+          silhouette read chibi instead of as a floor-length cone.
+          A ghost has a wisp tail instead (see AvatarVariantBody). */}
+      {!noLegs &&
+        [-0.21, 0.21].map((x) => (
+          <group key={x}>
+            <mesh geometry={legGeo} material={mats.dark} position={[x, legTop - 0.1, 0]} scale={[0.8, 0.7, 0.8]} />
+            <mesh
+              geometry={bootGeo}
+              material={mats.dark}
+              position={[x, GROUND_Y + 0.1, 0.05]}
+              scale={[0.85, 0.6, 1.3]}
+            />
+          </group>
+        ))}
 
       <group ref={set("torso")}>
         <mesh geometry={robeGeo} material={mats.robe} />
@@ -599,10 +606,13 @@ export default function GnomeModel({
         <Hair appearance={appearance} mats={mats} />
 
         {/* Beard sits PROUD of the chest. The old placement put its front face
-            at z 0.255 against a robe of radius 0.44 — fully buried. */}
-        <group ref={set("beard")} position={[0, -0.6, 0.3]} scale={[1, 1, 0.62]}>
-          <mesh geometry={beardGeo} material={mats.cloth} rotation={[Math.PI, 0, 0]} />
-        </group>
+            at z 0.255 against a robe of radius 0.44 — fully buried.
+            Beardless variants (lady, young-apprentice) drop it. */}
+        {!noBeard && (
+          <group ref={set("beard")} position={[0, -0.6, 0.3]} scale={[1, 1, 0.62]}>
+            <mesh geometry={beardGeo} material={mats.cloth} rotation={[Math.PI, 0, 0]} />
+          </group>
+        )}
 
         <group ref={set("hat")} position={[0, 0.3, 0]}>
           <Hat appearance={appearance} mats={mats} />
