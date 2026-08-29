@@ -1729,11 +1729,41 @@ function drawBeast(ctx: CanvasRenderingContext2D, cfg: BeastCfg) {
   ctx.fill();
 }
 
+/** Filled flat polygon from a point list — the building block for faceted traces. */
+function poly(ctx: CanvasRenderingContext2D, pts: number[][], fill: string) {
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.closePath();
+  ctx.fill();
+}
+
+/** A round eye with a dark pupil and a highlight — shared across the traces. */
+function eye(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, iris?: string) {
+  if (iris) {
+    ctx.fillStyle = iris;
+    ctx.beginPath();
+    ctx.ellipse(x, y, r * 1.15, r * 1.4, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = CC.dark;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  ctx.beginPath();
+  ctx.arc(x + r * 0.4, y - r * 0.5, r * 0.42, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 /**
  * Draw one critter around a local origin, facing +x. Sized to read against the
- * ~52px gnome head. Flat fills only — this is the low-power renderer.
+ * ~52px gnome head. Flat fills only — this is the low-power renderer. The newer
+ * cases are faceted traces of the reference sheets
+ * (`assets/critter-reference-lowpoly-2/`); older ones are simpler shape stacks.
  */
-function drawCritter(ctx: CanvasRenderingContext2D, id: CritterId, t: number) {
+export function drawCritter(ctx: CanvasRenderingContext2D, id: CritterId, t: number) {
   switch (id) {
     case "fairy": {
       ctx.fillStyle = CC.fairyWing;
@@ -2213,17 +2243,53 @@ function drawCritter(ctx: CanvasRenderingContext2D, id: CritterId, t: number) {
       break;
     }
     case "fox": {
-      drawBeast(ctx, { body: "#e47738", dark: "#a8501f", ear: "prick", tail: "brush", snout: 6 });
-      ctx.fillStyle = "#f4ead9";
+      // Faceted trace of critter-03 SIDE VIEW — sitting fox in profile, facing +x.
+      const O = "#df742d";
+      const OL = "#ee9a54";
+      const OD = "#bf5b1f";
+      const CR = "#f2e4cc";
+      const CRD = "#d9c3a0";
+      const BR = "#3a2a20";
+      // huge tail — sweeps up behind, curls forward, white tip
+      poly(ctx, [[-4, 16], [-16, 10], [-24, -4], [-22, -20], [-10, -26], [0, -16], [-2, 0], [-3, 12]], O);
+      poly(ctx, [[-22, -20], [-10, -26], [-6, -14], [-16, -8]], OL);
+      poly(ctx, [[-16, 10], [-24, -4], [-14, -2], [-8, 10]], OD);
+      poly(ctx, [[-10, -26], [0, -16], [4, -24], [-4, -30]], CR);
+      poly(ctx, [[-4, -30], [4, -24], [2, -19], [-6, -23]], CRD);
+      // rounded rear haunch (sitting)
+      poly(ctx, [[-8, 17], [-13, 4], [-8, -8], [4, -9], [8, 6], [4, 17]], O);
+      poly(ctx, [[-13, 4], [-8, -8], [-2, -3], [-7, 8]], OD);
+      // back curving to the shoulder
+      poly(ctx, [[4, -9], [10, -14], [15, -6], [13, 8], [4, 17], [8, 6]], O);
+      // cream chest down the front
+      poly(ctx, [[10, -6], [16, 0], [16, 14], [9, 16], [9, -2]], CR);
+      poly(ctx, [[9, 16], [16, 14], [15, 17], [9, 17]], CRD);
+      // front legs — dark socks
+      poly(ctx, [[9, 3], [12, 3], [12, 17], [9, 17]], BR);
+      poly(ctx, [[13, 4], [16, 4], [16, 17], [13, 17]], BR);
+      // upright neck + small head
+      poly(ctx, [[8, -6], [9, -16], [15, -22], [23, -19], [24, -9], [16, -3]], O);
+      poly(ctx, [[9, -16], [15, -22], [15, -15], [10, -12]], OL);
+      // pointed snout forward (cream)
+      poly(ctx, [[18, -14], [31, -12], [31, -7], [19, -5]], CR);
+      poly(ctx, [[18, -14], [23, -13], [23, -5], [19, -5]], CRD);
+      poly(ctx, [[29, -13], [34, -10], [29, -6]], BR); // nose
+      // big pointed ears — dark backs
+      poly(ctx, [[11, -19], [13, -34], [20, -22]], O);
+      poly(ctx, [[11, -19], [13, -34], [16, -24]], BR);
+      poly(ctx, [[13, -34], [20, -22], [17, -21]], OL);
+      poly(ctx, [[16, -20], [19, -32], [24, -21]], OD);
+      // cheek ruff
+      poly(ctx, [[15, -2], [22, -1], [19, 9], [13, 5]], CR);
+      poly(ctx, [[13, 5], [19, 9], [17, 12], [13, 9]], CRD);
+      // eye + brow
+      eye(ctx, 18, -13, 1.5, "#b9761f");
+      ctx.strokeStyle = "#6f4419";
+      ctx.lineWidth = 1.6;
       ctx.beginPath();
-      ctx.ellipse(-17, -4, 3.5, 3, -0.4, 0, Math.PI * 2); // white tail tip
-      ctx.fill();
-      ctx.beginPath();
-      ctx.moveTo(13, -2);
-      ctx.lineTo(21, 1);
-      ctx.lineTo(13, 3);
-      ctx.closePath();
-      ctx.fill();
+      ctx.moveTo(13, -17);
+      ctx.lineTo(21, -19);
+      ctx.stroke();
       break;
     }
     case "rabbit": {
