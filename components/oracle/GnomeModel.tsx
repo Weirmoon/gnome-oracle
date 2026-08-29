@@ -5,7 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { Appearance } from "@/lib/persona";
 import type { AvatarTier } from "./useAvatarCapability";
-import { usePersonaMaterials } from "./parts/materials";
+import { usePersonaMaterials, type PersonaMaterials } from "./parts/materials";
 import { Hat, hasStaff } from "./parts/hats";
 import { Torso } from "./parts/torsos";
 import { Pattern } from "./parts/patterns";
@@ -14,6 +14,15 @@ import { FaceFeature } from "./parts/faceFeatures";
 import { HeldItem } from "./parts/heldItems";
 import { BackItem } from "./parts/backItems";
 import { Accessory } from "./parts/accessories";
+import {
+  GROUND_Y,
+  HEAD_R,
+  HEAD_Y,
+  HEM_Y,
+  frontZ,
+  headZ,
+  makeRobeGeometry,
+} from "./parts/body";
 import type { PhaseTick } from "./animation/useOraclePhase";
 import { PHASE_POSES, applyMood, type RigPose } from "./animation/poses";
 import { getMouthOpen } from "./animation/lipSync";
@@ -28,8 +37,8 @@ export interface RigRefs {
   jaw: THREE.Group | null;
   eyelidL: THREE.Mesh | null;
   eyelidR: THREE.Mesh | null;
-  eyeL: THREE.Mesh | null;
-  eyeR: THREE.Mesh | null;
+  eyeL: THREE.Group | null;
+  eyeR: THREE.Group | null;
   browL: THREE.Group | null;
   browR: THREE.Group | null;
   beard: THREE.Group | null;
@@ -41,8 +50,14 @@ export interface RigRefs {
   staffOrb: THREE.Mesh | null;
 }
 
-const ARM_L_REST = 0.5;
-const ARM_R_REST = -0.5;
+const ARM_L_REST = 0.3;
+const ARM_R_REST = -0.3;
+
+/** Head-local rest height of the brow group (sits close over the eyes). */
+const BROW_Y = 0.205;
+/** Head-local eye centre. */
+const EYE_Y = 0.07;
+const EYE_X = 0.17;
 
 function lerp(a: number, b: number, k: number) {
   return a + (b - a) * k;
@@ -63,6 +78,45 @@ function lerpPose(cur: RigPose, target: RigPose, k: number): RigPose {
     blinkRate: lerp(cur.blinkRate, target.blinkRate, k),
     scale: lerp(cur.scale, target.scale, k),
   };
+}
+
+/**
+ * One eye: white ball, violet iris, dark pupil and an unlit specular dot, plus
+ * the lid that scales down over it. Sheet 01 shows a real iris + highlight —
+ * a flat black oval reads as a hole at 280px, and merges with dark eyewear.
+ */
+function Eye({
+  mats,
+  lidRef,
+}: {
+  mats: PersonaMaterials;
+  lidRef: (m: THREE.Mesh | null) => void;
+}) {
+  const z = headZ(EYE_Y, EYE_X);
+  return (
+    <group position={[0, 0, z - 0.06]}>
+      <mesh material={mats.light} scale={[1, 1.12, 0.6]}>
+        <sphereGeometry args={[0.105, 10, 8]} />
+      </mesh>
+      <mesh material={mats.iris} position={[0, 0, 0.055]} scale={[1, 1, 0.5]}>
+        <sphereGeometry args={[0.068, 10, 8]} />
+      </mesh>
+      <mesh material={mats.dark} position={[0, 0, 0.076]} scale={[1, 1, 0.5]}>
+        <sphereGeometry args={[0.036, 8, 6]} />
+      </mesh>
+      <mesh material={mats.glint} position={[-0.026, 0.032, 0.086]}>
+        <sphereGeometry args={[0.019, 6, 5]} />
+      </mesh>
+      <mesh
+        ref={lidRef}
+        material={mats.skin}
+        position={[0, 0.075, 0.03]}
+        scale={[1.3, 0, 0.9]}
+      >
+        <sphereGeometry args={[0.105, 10, 6]} />
+      </mesh>
+    </group>
+  );
 }
 
 /**
@@ -99,30 +153,44 @@ export default function GnomeModel({
 
   const staff = hasStaff(appearance);
   const heldHand: "L" | "R" = staff ? "L" : "R";
+  const seg = tier === "low" ? 0.6 : 1;
 
-  const headGeo = useMemo(() => new THREE.IcosahedronGeometry(0.42, 0), []);
-  const noseGeo = useMemo(() => new THREE.ConeGeometry(0.07, 0.16, 5), []);
-  const eyeGeo = useMemo(() => new THREE.SphereGeometry(0.06, 8, 6), []);
-  const robeGeo = useMemo(() => {
-    const pts = [
-      new THREE.Vector2(0.02, -1.12),
-      new THREE.Vector2(0.72, -1.05),
-      new THREE.Vector2(0.6, -0.5),
-      new THREE.Vector2(0.44, 0.05),
-      new THREE.Vector2(0.3, 0.34),
-      new THREE.Vector2(0.16, 0.46),
-    ];
-    return new THREE.LatheGeometry(pts, 7);
-  }, []);
-  const beardGeo = useMemo(() => new THREE.ConeGeometry(0.3, 0.55, 6), []);
-  const armGeo = useMemo(() => new THREE.CapsuleGeometry(0.07, 0.34, 2, 6), []);
+  // Rounded, slightly wide head — an unsubdivided icosahedron silhouettes as a
+  // hard hexagon with a pointed chin, which is nothing like the reference.
+  const headGeo = useMemo(
+    () => new THREE.SphereGeometry(HEAD_R, Math.round(14 * seg), Math.round(11 * seg)),
+    [seg]
+  );
+  const earGeo = useMemo(() => new THREE.ConeGeometry(0.1, 0.26, 5), []);
+  const noseGeo = useMemo(() => new THREE.SphereGeometry(0.088, 8, 7), []);
+  const robeGeo = useMemo(() => makeRobeGeometry(), []);
+  const beardGeo = useMemo(() => new THREE.ConeGeometry(0.38, 0.86, 9), []);
+  const armGeo = useMemo(() => new THREE.CapsuleGeometry(0.078, 0.36, 2, 7), []);
+  const handGeo = useMemo(() => new THREE.SphereGeometry(0.105, 8, 7), []);
+  const cuffGeo = useMemo(() => new THREE.CylinderGeometry(0.095, 0.095, 0.07, 8), []);
+  const legGeo = useMemo(() => new THREE.CylinderGeometry(0.1, 0.1, 0.24, 7), []);
+  const bootGeo = useMemo(() => new THREE.SphereGeometry(0.135, 9, 7), []);
+  const browGeo = useMemo(() => new THREE.BoxGeometry(0.19, 0.06, 0.07), []);
+  const mouthGeo = useMemo(
+    () => new THREE.TorusGeometry(0.088, 0.022, 5, 12, Math.PI * 0.8),
+    []
+  );
+  const blushGeo = useMemo(() => new THREE.SphereGeometry(0.082, 9, 7), []);
   const orbGeo = useMemo(() => new THREE.IcosahedronGeometry(0.11, 0), []);
-  const staffGeo = useMemo(() => new THREE.CylinderGeometry(0.035, 0.045, 2.0, 6), []);
+  const staffGeo = useMemo(() => new THREE.CylinderGeometry(0.032, 0.042, 1.55, 7), []);
+  const hemGeo = useMemo(() => new THREE.TorusGeometry(0.452, 0.028, 5, 20), []);
+  const gemGeo = useMemo(() => new THREE.OctahedronGeometry(0.075, 0), []);
 
   useEffect(() => {
-    const geos = [headGeo, noseGeo, eyeGeo, robeGeo, beardGeo, armGeo, orbGeo, staffGeo];
+    const geos = [
+      headGeo, earGeo, noseGeo, robeGeo, beardGeo, armGeo, handGeo, cuffGeo,
+      legGeo, bootGeo, browGeo, mouthGeo, blushGeo, orbGeo, staffGeo, hemGeo, gemGeo,
+    ];
     return () => geos.forEach((g) => g.dispose());
-  }, [headGeo, noseGeo, eyeGeo, robeGeo, beardGeo, armGeo, orbGeo, staffGeo]);
+  }, [
+    headGeo, earGeo, noseGeo, robeGeo, beardGeo, armGeo, handGeo, cuffGeo,
+    legGeo, bootGeo, browGeo, mouthGeo, blushGeo, orbGeo, staffGeo, hemGeo, gemGeo,
+  ]);
 
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime;
@@ -173,7 +241,7 @@ export default function GnomeModel({
 
     // ---- head ----
     if (r.head) {
-      r.head.position.y = 0.62 - Math.sin(t * 2 * p.bobRate) * 0.012 * p.bobAmp;
+      r.head.position.y = HEAD_Y - Math.sin(t * 2 * p.bobRate) * 0.012 * p.bobAmp;
       r.head.rotation.x = p.headPitch + Math.sin(t * 1.1) * 0.015;
       r.head.rotation.y = p.headYaw + Math.sin(t * 0.7) * 0.02;
       r.head.rotation.z = p.headRoll + Math.sin(t * 1.3) * 0.03;
@@ -187,14 +255,14 @@ export default function GnomeModel({
     // ---- brows ----
     for (const brow of [r.browL, r.browR]) {
       if (!brow) continue;
-      brow.position.y = 0.16 + p.brow * 0.03;
+      brow.position.y = BROW_Y + p.brow * 0.035;
       brow.rotation.z = (brow === r.browL ? -1 : 1) * Math.max(0, -p.brow) * 0.35;
     }
 
     // ---- eyes: widen / half-lid + blink ----
     const wide = 1 + Math.max(0, p.eyeWide) * 0.4;
     for (const eye of [r.eyeL, r.eyeR]) {
-      if (eye) eye.scale.set(wide, 1.2 * wide, 0.6);
+      if (eye) eye.scale.set(wide, wide, 1);
     }
     const rest = Math.min(0.7, Math.max(0, -p.eyeWide)); // sleepy → half closed
     const blink = Math.sin(t * (1.7 / Math.max(0.2, p.blinkRate))) > 0.965 ? 1 : 0;
@@ -222,14 +290,14 @@ export default function GnomeModel({
       r.handR.rotation.z = lerp(r.handR.rotation.z, 0, 0.15);
     }
 
-    // ---- mouth: lip-sync while speaking, else closed ----
+    // ---- mouth: lip-sync while speaking, else a thin smile line ----
     if (r.jaw) {
       const active = tick.phase === "speaking" || tick.phase === "answerBurst";
       const open = active ? getMouthOpen(t, speaking) : 0.12;
-      r.jaw.scale.y = lerp(r.jaw.scale.y, 0.12 + open * 0.95, 0.4);
+      r.jaw.scale.y = lerp(r.jaw.scale.y, 0.16 + open * 0.9, 0.4);
       r.jaw.scale.x = lerp(r.jaw.scale.x, 1 + open * 0.15, 0.3);
     }
-    if (r.beard) r.beard.rotation.x = (r.jaw?.scale.y ?? 0.12) * 0.25;
+    if (r.beard) r.beard.rotation.x = (r.jaw?.scale.y ?? 0.16) * 0.16;
 
     // ---- staff orb glow ----
     if (r.staffOrb) {
@@ -244,36 +312,68 @@ export default function GnomeModel({
     rig.current[k] = v;
   };
 
+  const legTop = HEM_Y + 0.04;
+
   return (
     <group ref={set("root")} position={[0, 0, 0]}>
-      <group ref={set("backSlot")} position={[0, -0.1, -0.22]}>
+      <group ref={set("backSlot")} position={[0, -0.1, -0.24]}>
         <BackItem appearance={appearance} mats={mats} />
       </group>
 
+      {/* Legs + boots below the tunic hem — the break that makes the
+          silhouette read chibi instead of as a floor-length cone. */}
+      {[-0.21, 0.21].map((x) => (
+        <group key={x}>
+          <mesh geometry={legGeo} material={mats.dark} position={[x, legTop - 0.12, 0]} />
+          <mesh
+            geometry={bootGeo}
+            material={mats.dark}
+            position={[x, GROUND_Y + 0.1, 0.05]}
+            scale={[1, 0.72, 1.42]}
+          />
+        </group>
+      ))}
+
       <group ref={set("torso")}>
         <mesh geometry={robeGeo} material={mats.robe} />
+        {/* gold hem band + chest gem (sheet 01 trim) */}
+        <mesh
+          geometry={hemGeo}
+          material={mats.accent}
+          position={[0, HEM_Y + 0.06, 0]}
+          rotation={[-Math.PI / 2, 0, 0]}
+        />
+        <mesh geometry={gemGeo} material={mats.accent} position={[0, -0.3, frontZ(-0.3, 0.08)]} />
+        <mesh material={mats.accent} position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.4, 0.026, 5, 20]} />
+        </mesh>
+
         <Torso appearance={appearance} mats={mats} />
         <Pattern appearance={appearance} mats={mats} />
         <Accessory appearance={appearance} mats={mats} />
 
-        <group ref={set("armL")} position={[-0.3, 0.24, 0]} rotation={[0, 0, ARM_L_REST]}>
-          <mesh geometry={armGeo} material={mats.robe} position={[0, -0.2, 0]} />
-          <group position={[0, -0.42, 0.05]}>
+        <group ref={set("armL")} position={[-0.46, -0.02, 0.16]} rotation={[0, 0, ARM_L_REST]}>
+          <mesh geometry={armGeo} material={mats.robe} position={[0, -0.22, 0]} />
+          <mesh geometry={cuffGeo} material={mats.accent} position={[0, -0.44, 0]} />
+          <mesh geometry={handGeo} material={mats.skin} position={[0, -0.55, 0]} scale={[1, 0.92, 0.9]} />
+          <group position={[0, -0.6, 0.06]}>
             {heldHand === "L" && <HeldItem appearance={appearance} mats={mats} />}
           </group>
         </group>
-        <group ref={set("armR")} position={[0.3, 0.24, 0]} rotation={[0, 0, ARM_R_REST]}>
-          <mesh geometry={armGeo} material={mats.robe} position={[0, -0.2, 0]} />
-          <group ref={set("handR")} position={[0, -0.42, 0.05]}>
+        <group ref={set("armR")} position={[0.46, -0.02, 0.16]} rotation={[0, 0, ARM_R_REST]}>
+          <mesh geometry={armGeo} material={mats.robe} position={[0, -0.22, 0]} />
+          <mesh geometry={cuffGeo} material={mats.accent} position={[0, -0.44, 0]} />
+          <mesh geometry={handGeo} material={mats.skin} position={[0, -0.55, 0]} scale={[1, 0.92, 0.9]} />
+          <group ref={set("handR")} position={[0, -0.6, 0.06]}>
             {heldHand === "R" && <HeldItem appearance={appearance} mats={mats} />}
             {staff && (
-              <group position={[0.02, 0.3, 0]}>
+              <group position={[0.1, 0.24, 0.04]} rotation={[0, 0, -ARM_R_REST]}>
                 <mesh geometry={staffGeo} material={mats.wood} />
                 <mesh
                   ref={set("staffOrb")}
                   geometry={orbGeo}
                   material={mats.accent}
-                  position={[0, 1.05, 0]}
+                  position={[0, 0.8, 0]}
                 />
               </group>
             )}
@@ -281,63 +381,78 @@ export default function GnomeModel({
         </group>
       </group>
 
-      <group ref={set("head")} position={[0, 0.62, 0]}>
-        <mesh geometry={headGeo} material={mats.skin} />
-        <mesh geometry={noseGeo} material={mats.skin} position={[0, -0.02, 0.4]} rotation={[1.45, 0, 0]} />
+      <group ref={set("head")} position={[0, HEAD_Y, 0]}>
+        <mesh geometry={headGeo} material={mats.skin} scale={[1.06, 1, 0.97]} />
 
-        <group position={[-0.15, 0.05, 0.33]}>
-          <mesh ref={set("eyeL")} geometry={eyeGeo} material={mats.dark} scale={[1, 1.2, 0.6]} />
+        {/* pointed ears — present on every view of sheet 01 */}
+        <mesh
+          geometry={earGeo}
+          material={mats.skin}
+          position={[-0.45, 0.04, -0.02]}
+          rotation={[0, 0, 1.05]}
+        />
+        <mesh
+          geometry={earGeo}
+          material={mats.skin}
+          position={[0.45, 0.04, -0.02]}
+          rotation={[0, 0, -1.05]}
+        />
+
+        <mesh geometry={noseGeo} material={mats.skin} position={[0, -0.03, headZ(-0.03) - 0.03]} />
+
+        <group ref={set("eyeL")} position={[-EYE_X, EYE_Y, 0]}>
+          <Eye mats={mats} lidRef={set("eyelidL")} />
+        </group>
+        <group ref={set("eyeR")} position={[EYE_X, EYE_Y, 0]}>
+          <Eye mats={mats} lidRef={set("eyelidR")} />
+        </group>
+
+        <group ref={set("browL")} position={[-EYE_X, BROW_Y, 0]}>
           <mesh
-            ref={set("eyelidL")}
-            geometry={eyeGeo}
-            material={mats.skin}
-            position={[0, 0.05, 0.02]}
-            scale={[1.25, 0, 0.7]}
+            geometry={browGeo}
+            material={mats.cloth}
+            position={[0, 0, headZ(BROW_Y, EYE_X) - 0.03]}
+            rotation={[0, 0, 0.1]}
           />
         </group>
-        <group position={[0.15, 0.05, 0.33]}>
-          <mesh ref={set("eyeR")} geometry={eyeGeo} material={mats.dark} scale={[1, 1.2, 0.6]} />
+        <group ref={set("browR")} position={[EYE_X, BROW_Y, 0]}>
           <mesh
-            ref={set("eyelidR")}
-            geometry={eyeGeo}
-            material={mats.skin}
-            position={[0, 0.05, 0.02]}
-            scale={[1.25, 0, 0.7]}
+            geometry={browGeo}
+            material={mats.cloth}
+            position={[0, 0, headZ(BROW_Y, EYE_X) - 0.03]}
+            rotation={[0, 0, -0.1]}
           />
         </group>
 
-        <group ref={set("browL")} position={[-0.15, 0.16, 0.34]}>
-          <mesh material={mats.cloth}>
-            <boxGeometry args={[0.14, 0.03, 0.04]} />
-          </mesh>
-        </group>
-        <group ref={set("browR")} position={[0.15, 0.16, 0.34]}>
-          <mesh material={mats.cloth}>
-            <boxGeometry args={[0.14, 0.03, 0.04]} />
-          </mesh>
-        </group>
+        {/* rosy cheeks — matte rose, NOT the emissive accent (that read as rivets) */}
+        <mesh
+          geometry={blushGeo}
+          material={mats.blush}
+          position={[-0.29, -0.1, headZ(-0.1, 0.29) - 0.035]}
+          scale={[0.92, 0.6, 0.3]}
+        />
+        <mesh
+          geometry={blushGeo}
+          material={mats.blush}
+          position={[0.29, -0.1, headZ(-0.1, 0.29) - 0.035]}
+          scale={[0.92, 0.6, 0.3]}
+        />
 
-        <group ref={set("jaw")} position={[0, -0.16, 0.32]} scale={[1, 0.12, 1]}>
-          <mesh material={mats.dark}>
-            <boxGeometry args={[0.16, 0.16, 0.06]} />
-          </mesh>
+        {/* mouth: a curved arc that opens downward under lip-sync */}
+        <group ref={set("jaw")} position={[0, -0.14, headZ(-0.14) - 0.04]} scale={[1, 0.16, 1]}>
+          <mesh geometry={mouthGeo} material={mats.dark} rotation={[0, 0, Math.PI * 1.1]} />
         </group>
-
-        <mesh material={mats.accentCore} position={[-0.26, -0.05, 0.26]} scale={0.5}>
-          <sphereGeometry args={[0.09, 8, 6]} />
-        </mesh>
-        <mesh material={mats.accentCore} position={[0.26, -0.05, 0.26]} scale={0.5}>
-          <sphereGeometry args={[0.09, 8, 6]} />
-        </mesh>
 
         <FaceFeature appearance={appearance} mats={mats} />
         <Hair appearance={appearance} mats={mats} />
 
-        <group ref={set("beard")} position={[0, -0.5, 0.12]} scale={[0.9, 1, 0.45]}>
+        {/* Beard sits PROUD of the chest. The old placement put its front face
+            at z 0.255 against a robe of radius 0.44 — fully buried. */}
+        <group ref={set("beard")} position={[0, -0.6, 0.3]} scale={[1, 1, 0.62]}>
           <mesh geometry={beardGeo} material={mats.cloth} rotation={[Math.PI, 0, 0]} />
         </group>
 
-        <group ref={set("hat")} position={[0, 0.52, 0]}>
+        <group ref={set("hat")} position={[0, 0.3, 0]}>
           <Hat appearance={appearance} mats={mats} />
         </group>
       </group>

@@ -88,8 +88,12 @@ export default function OracleAvatar3D(props: Props) {
     <div ref={wrapRef} className="oracle3d" aria-hidden="true">
       <Canvas
         orthographic
-        camera={{ position: [0, 1.15, 6], zoom: 92, near: 0.1, far: 20 }}
-        onCreated={({ camera }) => camera.lookAt(0, 0.18, 0)}
+        // Framing: at zoom 92 / lookAt 0.18 the wizard hat tip (world y 1.85)
+        // projected 0.27 units past the top edge while 0.24 went unused at the
+        // bottom. zoom 82 / lookAt 0.42 gives a visible band of y -1.30..2.14,
+        // which holds the tallest hat and the boots with even margins.
+        camera={{ position: [0, 1.15, 6], zoom: 82, near: 0.1, far: 20 }}
+        onCreated={({ camera }) => camera.lookAt(0, 0.42, 0)}
         dpr={tier === "low" ? 1 : [1, 1.75]}
         gl={{ antialias: tier !== "low", alpha: true, powerPreference: "high-performance" }}
         shadows={false}
@@ -114,10 +118,14 @@ export default function OracleAvatar3D(props: Props) {
 function LightRig({ accent }: { accent: string }) {
   return (
     <>
-      <hemisphereLight args={["#dbe8ff", "#40355c", 0.8]} />
-      <directionalLight position={[-3, 4, 5]} intensity={0.9} />
-      <directionalLight position={[1.5, 0.5, 6]} intensity={0.5} />
-      <directionalLight position={[3, 1.5, -4]} intensity={0.55} color={accent} />
+      {/* Lower ambient + a stronger key gives the flat-shaded facets real value
+          steps between neighbours — that contrast IS the crystal read now that
+          the material no longer pretends to be transmissive. */}
+      <hemisphereLight args={["#dbe8ff", "#3b3054", 0.45]} />
+      <directionalLight position={[-3, 4, 5]} intensity={1.5} />
+      <directionalLight position={[1.5, 0.5, 6]} intensity={0.32} color="#bcd2ff" />
+      <directionalLight position={[3.5, 2, -3]} intensity={1.15} color={accent} />
+      <directionalLight position={[-2, -1, -3]} intensity={0.35} color={accent} />
     </>
   );
 }

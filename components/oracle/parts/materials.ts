@@ -17,14 +17,20 @@ export interface PersonaMaterials {
   hatDark: THREE.Material;
   /** Skin (head, hands, nose) — faceted but matte-ish. */
   skin: THREE.Material;
-  /** Beard / hair / cloth — matte toon so it reads against the crystal. */
+  /** Beard / hair / cloth — matte + faceted so it reads against the crystal. */
   cloth: THREE.Material;
   /** Accent-coloured emissive — trims, gems, pattern lines. */
   accent: THREE.Material;
   /** Bright unlit accent core for the inner glow. */
   accentCore: THREE.Material;
-  /** Dark near-black — eyes, mouth, iron. */
+  /** Dark near-black — pupils, mouth, boots, iron. */
   dark: THREE.Material;
+  /** Rosy cheek blush — matte, never accent-coloured (sheet 01). */
+  blush: THREE.Material;
+  /** Violet iris ring inside the eye. */
+  iris: THREE.Material;
+  /** Unlit white specular dot in the eye. */
+  glint: THREE.Material;
   /** Off-white — pom-poms, collars, teeth. */
   light: THREE.Material;
   /** Wood — staves, handles, hammer shafts. */
@@ -35,41 +41,25 @@ export interface PersonaMaterials {
   glass: THREE.Material;
 }
 
-function toonGradient(): THREE.DataTexture {
-  const data = new Uint8Array([90, 90, 90, 255, 160, 160, 160, 255, 230, 230, 230, 255, 255, 255, 255, 255]);
-  const tex = new THREE.DataTexture(data, 4, 1, THREE.RGBAFormat);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.needsUpdate = true;
-  return tex;
-}
-
+/**
+ * The faceted "crystal" costume material.
+ *
+ * NOTE: this deliberately does NOT use `transmission` / `clearcoat` /
+ * `iridescence`. Those are environment-driven — with no env map in the scene
+ * (`envMapIntensity: 0`) they cost real GPU time and contribute essentially
+ * nothing, which is why the robe used to read as flat matte plastic. The
+ * reference art is stylised painted crystal, not physically refractive, so the
+ * facet read comes from `flatShading` + dense geometry + a high-contrast light
+ * rig instead, with a low emissive lift standing in for the inner glow.
+ */
 function crystal(color: string, accent: string, tier: AvatarTier): THREE.Material {
-  if (tier === "low") {
-    return new THREE.MeshStandardMaterial({
-      color,
-      flatShading: true,
-      roughness: 0.42,
-      metalness: 0,
-      emissive: accent,
-      emissiveIntensity: 0.14,
-    });
-  }
-  return new THREE.MeshPhysicalMaterial({
+  return new THREE.MeshStandardMaterial({
     color,
     flatShading: true,
-    roughness: 0.28,
+    roughness: tier === "low" ? 0.5 : 0.34,
     metalness: 0,
-    transmission: 0.18,
-    thickness: 0.5,
-    ior: 1.45,
-    clearcoat: 0.4,
-    clearcoatRoughness: 0.3,
-    iridescence: 0.35,
-    iridescenceIOR: 1.3,
     emissive: accent,
-    emissiveIntensity: 0.16,
-    envMapIntensity: 0,
+    emissiveIntensity: tier === "low" ? 0.1 : 0.13,
   });
 }
 
@@ -86,7 +76,6 @@ export function usePersonaMaterials(
   const { robeColor, hatColor, beardColor, skin, accent } = appearance;
 
   const mats = useMemo<PersonaMaterials>(() => {
-    const gradientMap = toonGradient();
     return {
       robe: crystal(robeColor, accent, tier),
       robeDark: crystal(shadeHex(robeColor, -0.16), accent, tier),
@@ -98,7 +87,14 @@ export function usePersonaMaterials(
         roughness: 0.6,
         metalness: 0,
       }),
-      cloth: new THREE.MeshToonMaterial({ color: beardColor, gradientMap }),
+      // Flat-shaded rather than toon: MeshToonMaterial has no `flatShading`,
+      // and without facets the beard read as one smooth blank triangle.
+      cloth: new THREE.MeshStandardMaterial({
+        color: beardColor,
+        flatShading: true,
+        roughness: 0.85,
+        metalness: 0,
+      }),
       accent: new THREE.MeshStandardMaterial({
         color: accent,
         emissive: accent,
@@ -108,6 +104,14 @@ export function usePersonaMaterials(
       }),
       accentCore: new THREE.MeshBasicMaterial({ color: accent, toneMapped: false }),
       dark: new THREE.MeshStandardMaterial({ color: "#1c1526", roughness: 0.5, flatShading: true }),
+      blush: new THREE.MeshStandardMaterial({
+        color: "#ef9a95",
+        roughness: 0.95,
+        transparent: true,
+        opacity: 0.85,
+      }),
+      iris: new THREE.MeshStandardMaterial({ color: "#6b3fb5", roughness: 0.35 }),
+      glint: new THREE.MeshBasicMaterial({ color: "#ffffff", toneMapped: false }),
       light: new THREE.MeshStandardMaterial({ color: "#fffdf5", roughness: 0.6, flatShading: true }),
       wood: new THREE.MeshStandardMaterial({ color: "#6b4a2b", roughness: 0.85, flatShading: true }),
       metal: new THREE.MeshStandardMaterial({
@@ -116,14 +120,15 @@ export function usePersonaMaterials(
         roughness: 0.28,
         flatShading: true,
       }),
-      glass: new THREE.MeshPhysicalMaterial({
+      // Same reasoning as `crystal()`: `transmission` needs an env map to show
+      // anything, so this is a plain alpha-blended surface instead.
+      glass: new THREE.MeshStandardMaterial({
         color: "#dce7ef",
-        transmission: tier === "low" ? 0 : 0.9,
-        thickness: 0.3,
-        roughness: 0.1,
+        roughness: 0.15,
         transparent: true,
-        opacity: tier === "low" ? 0.4 : 1,
-        envMapIntensity: 0,
+        opacity: 0.45,
+        emissive: "#9fc4de",
+        emissiveIntensity: 0.15,
       }),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
