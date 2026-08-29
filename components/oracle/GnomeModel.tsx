@@ -29,6 +29,7 @@ import { getMouthOpen } from "./animation/lipSync";
 import { readGesture } from "./animation/gestures";
 import { flourishFor } from "./animation/flourish";
 import type { ParticlesHandle } from "./Particles";
+import type { CritterReaction } from "./critters/catalog";
 
 export interface RigRefs {
   root: THREE.Group | null;
@@ -131,6 +132,8 @@ export default function GnomeModel({
   mood,
   phaseTick,
   particles,
+  critterReaction = null,
+  critterPos,
 }: {
   appearance: Appearance;
   tier: AvatarTier;
@@ -138,6 +141,10 @@ export default function GnomeModel({
   mood?: string;
   phaseTick: (dtMs: number) => PhaseTick;
   particles: RefObject<ParticlesHandle | null>;
+  /** Set while an ambient critter event is in its react beat. */
+  critterReaction?: CritterReaction | null;
+  /** Live local-space position of that critter, for aim and spell bolts. */
+  critterPos?: [number, number, number];
 }) {
   const mats = usePersonaMaterials(appearance, tier);
 
@@ -149,6 +156,10 @@ export default function GnomeModel({
   });
   const pose = useRef<RigPose>({ ...PHASE_POSES.idle });
   const flourish = useRef<{ kind: string; t: number } | null>(null);
+  /** ms since the current critter reaction started; -1 when none is running. */
+  const reactT = useRef(-1);
+  const lastReaction = useRef<CritterReaction | null>(null);
+  const boltsFired = useRef(0);
   const popScale = tier === "low" ? 0.5 : 1;
 
   const staff = hasStaff(appearance);
@@ -298,6 +309,134 @@ export default function GnomeModel({
       r.jaw.scale.x = lerp(r.jaw.scale.x, 1 + open * 0.15, 0.3);
     }
     if (r.beard) r.beard.rotation.x = (r.jaw?.scale.y ?? 0.16) * 0.16;
+
+    // ---- ambient critter reaction ----
+    // Overrides the idle pose while a critter event is in its react beat.
+    // Critters only fire from idle, so this never fights thinking/speaking.
+    if (critterReaction !== lastReaction.current) {
+      lastReaction.current = critterReaction;
+      reactT.current = critterReaction ? 0 : -1;
+      boltsFired.current = 0;
+      if (r.hat) r.hat.visible = true;
+    }
+    if (critterReaction && reactT.current >= 0) {
+      reactT.current += dtMs;
+      const rt = reactT.current / 1000;
+      const aimX = critterPos ? critterPos[0] : 0.8;
+      const aimY = critterPos ? critterPos[1] : 0.7;
+      // Yaw toward the critter, clamped so he never turns his back.
+      const yaw = Math.max(-0.9, Math.min(0.9, aimX * 0.6));
+      const pitch = Math.max(-0.5, Math.min(0.5, (aimY - 0.62) * -0.4));
+
+      switch (critterReaction) {
+        case "zap": {
+          if (r.torso) r.torso.rotation.y = lerp(r.torso.rotation.y, yaw * 0.5, 0.12);
+          if (r.head) {
+            r.head.rotation.y = yaw;
+            r.head.rotation.x = pitch;
+          }
+          // three thrusts across the window, one bolt stream each
+          const period = 1.1;
+          const phase = (rt % period) / period;
+          const thrust = Math.sin(Math.min(1, phase / 0.45) * Math.PI);
+          if (r.armR) {
+            r.armR.rotation.z = ARM_R_REST - thrust * 1.5;
+            r.armR.rotation.x = thrust * -0.5;
+          }
+          const shouldFire = Math.floor(rt / period) + 1;
+          if (phase > 0.35 && boltsFired.current < shouldFire && boltsFired.current < 3) {
+            boltsFired.current = shouldFire;
+            const from: [number, number, number] = staff ? [0.75, 1.05, 0.2] : [0.7, 0.1, 0.3];
+            particles.current?.beam(from, critterPos ?? [1.2, 0.8, 0.3], appearance.accent, tier === "low" ? 5 : 11);
+          }
+          for (const brow of [r.browL, r.browR]) {
+            if (brow) brow.position.y = BROW_Y - 0.035;
+          }
+          if (r.jaw) r.jaw.scale.y = 0.16 + (0.5 + Math.sin(rt * 15) * 0.5) * 0.4;
+          break;
+        }
+        case "swat": {
+          const sweep = Math.sin(rt * 6.5);
+          if (r.armR) {
+            r.armR.rotation.z = ARM_R_REST - 0.9 - sweep * 0.55;
+            r.armR.rotation.x = sweep * 0.4;
+          }
+          if (r.head) r.head.rotation.y = Math.sin(rt * 7.5) * 0.28;
+          if (r.torso) r.torso.rotation.x = lerp(r.torso.rotation.x, -0.14, 0.1);
+          break;
+        }
+        case "startle": {
+          const pop = Math.max(0, 1 - rt / 0.45);
+          if (r.root) {
+            r.root.position.y += pop * 0.16;
+            r.root.scale.setScalar(r.root.scale.x * (1 + pop * 0.06));
+          }
+          for (const eye of [r.eyeL, r.eyeR]) {
+            if (eye) eye.scale.setScalar(1 + pop * 0.55);
+          }
+          if (r.head) {
+            r.head.rotation.y = lerp(r.head.rotation.y, yaw, 0.12);
+            r.head.rotation.x = pitch;
+          }
+          if (rt > 0.5) {
+            for (const brow of [r.browL, r.browR]) {
+              if (brow) brow.position.y = BROW_Y - 0.03;
+            }
+          }
+          break;
+        }
+        case "calm": {
+          if (r.head) {
+            r.head.rotation.y = lerp(r.head.rotation.y, yaw, 0.06);
+            r.head.rotation.x = lerp(r.head.rotation.x, pitch, 0.06);
+          }
+          for (const brow of [r.browL, r.browR]) {
+            if (brow) brow.position.y = BROW_Y + 0.02;
+          }
+          if (r.root) r.root.position.y = Math.sin(t * p.bobRate) * 0.05 * p.bobAmp;
+          break;
+        }
+        case "guard": {
+          const raise = Math.min(1, rt / 0.4);
+          if (r.armR) {
+            r.armR.rotation.z = ARM_R_REST - raise * 1.35;
+            r.armR.rotation.x = raise * -0.3;
+          }
+          if (r.torso) r.torso.rotation.x = lerp(r.torso.rotation.x, -0.16, 0.08);
+          if (r.head) {
+            r.head.rotation.y = lerp(r.head.rotation.y, yaw, 0.08);
+            r.head.rotation.x = lerp(r.head.rotation.x, pitch, 0.08);
+          }
+          if (r.staffOrb) {
+            const m = r.staffOrb.material as THREE.MeshStandardMaterial;
+            m.emissiveIntensity = 1.1 + Math.sin(t * 8) * 0.3;
+          }
+          break;
+        }
+        case "grab-hat": {
+          // The critter carries its own hat mesh; hide his so it reads as stolen.
+          if (r.hat) r.hat.visible = rt < 0.25;
+          if (r.armR) {
+            const up = Math.min(1, rt / 0.35);
+            r.armR.rotation.z = ARM_R_REST - up * 1.9;
+          }
+          if (r.head) r.head.rotation.y = Math.sin(rt * 8) * 0.24;
+          for (const brow of [r.browL, r.browR]) {
+            if (brow) brow.position.y = BROW_Y - 0.04;
+          }
+          break;
+        }
+        case "wait": {
+          const tap = Math.max(0, Math.sin(rt * 9));
+          if (r.armR) r.armR.rotation.z = ARM_R_REST - 0.15 - tap * 0.25;
+          // periodic eye-roll, and one slow sigh mid-window
+          if (r.head) r.head.rotation.z = Math.sin(rt * 1.6) * 0.12;
+          const sigh = Math.max(0, Math.sin((rt - 2.2) * 1.4));
+          if (r.jaw && rt > 2.2 && rt < 4.4) r.jaw.scale.y = 0.16 + sigh * 0.5;
+          break;
+        }
+      }
+    }
 
     // ---- staff orb glow ----
     if (r.staffOrb) {

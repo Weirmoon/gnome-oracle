@@ -282,6 +282,89 @@ class SoundEngine {
     this.tone(tp.chime[3], t + 0.04, 0.4, 0.06, tp.wave, this.sfxGain!);
   }
 
+  /**
+   * Arrival cue for an ambient critter, one shape per `sfx` kind. Rides the
+   * same per-persona theme + sfx gain bus as every other cue.
+   */
+  critterCue(kind: "sparkle" | "rumble" | "soft" | "buzz" | "gust" | "caw") {
+    if (!this.ensure() || !this.ctx) return;
+    this.resume();
+    const tp = THEMES[this.theme];
+    const t = this.ctx.currentTime;
+    const g = this.sfxGain!;
+    switch (kind) {
+      case "sparkle":
+        for (let i = 0; i < 5; i++) {
+          this.tone(tp.chime[i % tp.chime.length] * 2, t + i * 0.055, 0.3, 0.06, tp.wave, g);
+        }
+        break;
+      case "rumble":
+        for (let i = 0; i < 3; i++) {
+          this.tone(tp.chime[0] * 0.25, t + i * 0.14, 0.5, 0.16, "sine", g);
+        }
+        break;
+      case "soft":
+        this.tone(tp.chime[0], t, 0.7, 0.07, "sine", g);
+        this.tone(tp.chime[2], t + 0.06, 0.7, 0.05, "sine", g);
+        break;
+      case "buzz":
+        for (let i = 0; i < 7; i++) {
+          this.tone(tp.blip * (1.4 + (i % 2) * 0.3), t + i * 0.035, 0.06, 0.05, "square", g);
+        }
+        break;
+      case "gust":
+        this.noiseBurst(t, 0.45, 0.07, g);
+        break;
+      case "caw":
+        this.tone(tp.chime[2] * 1.2, t, 0.12, 0.11, "square", g);
+        this.tone(tp.chime[1] * 1.1, t + 0.16, 0.14, 0.1, "square", g);
+        break;
+    }
+  }
+
+  /** Fast downward sweep + tick, fired per spell-bolt thrust. */
+  spellZap() {
+    if (!this.ensure() || !this.ctx) return;
+    this.resume();
+    const tp = THEMES[this.theme];
+    const t = this.ctx.currentTime;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = tp.wave;
+    o.frequency.setValueAtTime(tp.chime[tp.chime.length - 1] * 2, t);
+    o.frequency.exponentialRampToValueAtTime(tp.chime[0] * 0.7, t + 0.18);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.12, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+    o.connect(g);
+    g.connect(this.sfxGain!);
+    o.start(t);
+    o.stop(t + 0.26);
+    this.noiseBurst(t, 0.09, 0.05, this.sfxGain!);
+  }
+
+  /** Short filtered-noise burst — wind and impact texture. */
+  private noiseBurst(at: number, dur: number, peak: number, dest: AudioNode) {
+    if (!this.ctx) return;
+    const frames = Math.max(1, Math.floor(this.ctx.sampleRate * dur));
+    const buf = this.ctx.createBuffer(1, frames, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < frames; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / frames);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 900;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(peak, at);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    src.connect(filter);
+    filter.connect(g);
+    g.connect(dest);
+    src.start(at);
+    src.stop(at + dur);
+  }
+
   /** Short typewriter blip, throttled so streaming text doesn't machine-gun it. */
   typeTick() {
     if (this.typingVolume <= 0 || !this.ensure() || !this.ctx) return;

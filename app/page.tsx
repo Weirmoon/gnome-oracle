@@ -1,11 +1,17 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { OracleAvatar } from "@/components/oracle";
+import type { CritterApi } from "@/components/oracle/critters/useCritterEvents";
 import type { PersonaMeta } from "@/lib/persona";
 import { tts } from "@/lib/tts";
 import { sound } from "@/lib/sound";
+
+// Loaded only when the settings panel opens, so the critter catalog stays out
+// of the initial "/" bundle.
+const SummonRow = dynamic(() => import("@/components/oracle/critters/SummonRow"), { ssr: false });
 
 interface Character {
   id: number;
@@ -72,6 +78,9 @@ export default function Home() {
   const [streamDone, setStreamDone] = useState(0);
   const [avatarPref, setAvatarPref] = useState<AvatarPref>("auto");
   const [avatarQuality, setAvatarQuality] = useState<AvatarQualityPref>("high");
+  const [crittersOn, setCrittersOn] = useState(false);
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const critterApi = useRef<CritterApi | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const selected = characters.find((c) => c.id === selectedId);
@@ -108,6 +117,7 @@ export default function Home() {
     const storedOutfit = Number(localStorage.getItem("gnome.outfitIndex"));
     const storedAvatar = localStorage.getItem("gnome.avatar");
     const storedAvatarQuality = localStorage.getItem("gnome.avatarQuality");
+    const storedCritters = localStorage.getItem("gnome.critters");
     const voiceOnPref = voice === null ? true : voice === "1";
     const musicOnPref = music === null ? true : music === "1";
     const vols: Volumes = {
@@ -129,6 +139,11 @@ export default function Home() {
     if (storedAvatarQuality === "high" || storedAvatarQuality === "low") {
       setAvatarQuality(storedAvatarQuality);
     }
+    // Ambient critters default on, but never under reduced motion.
+    const reduce =
+      typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    setReducedMotion(reduce);
+    setCrittersOn(reduce ? false : storedCritters === null ? true : storedCritters === "1");
 
     tts.setMuted(!voiceOnPref);
     tts.setVolume(vols.voice);
@@ -191,6 +206,12 @@ export default function Home() {
     localStorage.setItem("gnome.mood", value);
   }
 
+  function toggleCritters() {
+    const next = !crittersOn;
+    setCrittersOn(next);
+    localStorage.setItem("gnome.critters", next ? "1" : "0");
+  }
+
   function changeAvatarPref(value: AvatarPref) {
     setAvatarPref(value);
     localStorage.setItem("gnome.avatar", value);
@@ -226,6 +247,16 @@ export default function Home() {
 
   const ask = useCallback(async () => {
     if (!question.trim() || selectedId == null || streaming) return;
+
+    // "/fairy" (etc.) as the whole input summons a critter instead of asking.
+    // Intercepted here so it never reaches /api/ask or the history. summon()
+    // validates the id, which avoids importing the catalog on this page.
+    const slash = /^\/([a-z]+)\s*$/i.exec(question.trim());
+    if (slash && critterApi.current?.summon(slash[1].toLowerCase())) {
+      setQuestion("");
+      return;
+    }
+
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
@@ -347,6 +378,14 @@ export default function Home() {
               </select>
             </div>
           )}
+          {avatarPref !== "2d" && (
+            <SummonRow
+              crittersOn={crittersOn}
+              reducedMotion={reducedMotion}
+              onToggle={toggleCritters}
+              api={critterApi}
+            />
+          )}
           <div className="soundrow">
             <button className="iconbtn" onClick={toggleVoice}>
               {voiceOn ? "🔊" : "🔇"}
@@ -418,6 +457,11 @@ export default function Home() {
           streamDone={streamDone}
           mood={mood}
           quality={avatarQualityProp}
+          crittersEnabled={crittersOn}
+          critterApiRef={critterApi}
+          characterId={selectedId ?? undefined}
+          voiceOn={voiceOn}
+          reducedMotion={reducedMotion}
         />
         <div className={`bubble ${answer ? "" : "placeholder"}`}>
           {answer ||

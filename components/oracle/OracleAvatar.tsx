@@ -1,10 +1,11 @@
 "use client";
 
-import { Component, Suspense, type ReactNode } from "react";
+import { Component, Suspense, type ReactNode, type Ref } from "react";
 import dynamic from "next/dynamic";
 import OracleCanvas from "@/components/OracleCanvas";
 import type { Appearance } from "@/lib/persona";
 import { useAvatarCapability } from "./useAvatarCapability";
+import type { CritterApi } from "./critters/useCritterEvents";
 
 /**
  * Public avatar component. Owns the choice between the 2D `<OracleCanvas>`
@@ -41,6 +42,17 @@ export interface OracleAvatarProps {
   mood?: string;
   /** Rendering preference from settings. Default "auto". */
   quality?: OracleQuality;
+
+  // --- ambient critters (3D only; the 2D fallback ignores all of this) ---
+  /** Ambient critter loop on. Manual `summon` still works when false. */
+  crittersEnabled?: boolean;
+  /** Populated with the critter controls so `page.tsx` can summon by slash command. */
+  critterApiRef?: Ref<CritterApi>;
+  /** Persona id + voice flag, needed to fetch and speak a critter quip. */
+  characterId?: number;
+  voiceOn?: boolean;
+  /** Force-simplifies critter motion and disables the ambient loop. */
+  reducedMotion?: boolean;
 }
 
 const OracleAvatar3D = dynamic(() => import("./OracleAvatar3D"), { ssr: false });

@@ -91,6 +91,12 @@ canvas.oracle,
   filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.45));
 }
 
+/* The stage is a fixed 280px box, so the critter caption overlays it rather
+   than adding height and shifting the bubble below. */
+.oracle3d {
+  position: relative;
+}
+
 .oracle3d canvas {
   display: block;
 }
@@ -401,4 +407,64 @@ button.danger {
   .row {
     flex-direction: column;
   }
+}
+
+/* --- ambient critter quip caption --------------------------------------- */
+/* Sits under the stage, deliberately NOT the answer bubble: critter lines are
+   flavour, are never written to history, and must not be mistaken for a reply. */
+.critter-quip {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  margin: 0;
+  max-width: 62%;
+  padding: 5px 10px;
+  border-radius: 10px;
+  background: rgba(24, 16, 38, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: #e6dcff;
+  font-size: 0.78rem;
+  font-style: italic;
+  line-height: 1.32;
+  text-align: left;
+  animation: critterQuipIn 260ms ease-out;
+}
+
+@keyframes critterQuipIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.soundhint {
+  font-size: 0.78rem;
+  opacity: 0.62;
+}
+
+.critterrow {
+  align-items: flex-start;
+}
+
+.critterbuttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+}
+
+.critterbtn {
+  font-size: 0.72rem;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  cursor: pointer;
+}
+
+.critterbtn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .critter-quip { animation: none; }
 }

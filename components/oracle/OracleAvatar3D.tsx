@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import * as THREE from "three";
 import type { Appearance } from "@/lib/persona";
@@ -11,6 +11,8 @@ import Particles, { type ParticlesHandle } from "./Particles";
 import { useOraclePhase } from "./animation/useOraclePhase";
 import { noteAnswerText, noteSpeakingStart } from "./animation/lipSync";
 import { feedGestureText, resetGestures } from "./animation/gestures";
+import CritterStage from "./critters/CritterStage";
+import { useCritterEvents } from "./critters/useCritterEvents";
 
 const DEFAULT_APPEARANCE: Appearance = {
   hat: "wizard",
@@ -40,6 +42,23 @@ export default function OracleAvatar3D(props: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const particlesRef = useRef<ParticlesHandle | null>(null);
   const [active, setActive] = useState(true);
+
+  // Live local-space position of the active critter. Mutated in place by
+  // CritterStage each frame and read by GnomeModel's useFrame, so aiming and
+  // spell bolts track it without driving a React render per frame.
+  const critterPos = useRef<[number, number, number]>([1.2, 0.8, 0.4]);
+
+  const critters = useCritterEvents({
+    enabled: props.crittersEnabled ?? false,
+    isIdle: !props.streaming && !speaking,
+    streaming: !!props.streaming,
+    characterId: props.characterId,
+    mood: props.mood,
+    reduced: tier === "low" || !!props.reducedMotion,
+    voiceOn: !!props.voiceOn,
+  });
+
+  useImperativeHandle(props.critterApiRef, () => critters.api, [critters.api]);
 
   const phase = useOraclePhase({
     streaming: props.streaming,
@@ -107,10 +126,26 @@ export default function OracleAvatar3D(props: Props) {
           mood={props.mood}
           phaseTick={phase.tick}
           particles={particlesRef}
+          critterReaction={critters.active?.reacting ? critters.active.critter.reaction : null}
+          critterPos={critterPos.current}
         />
+        {critters.active && (
+          <CritterStage
+            key={critters.active.startedAt}
+            critter={critters.active.critter}
+            startedAt={critters.active.startedAt}
+            posRef={critterPos}
+            reduced={tier === "low" || !!props.reducedMotion}
+          />
+        )}
         <Particles ref={particlesRef} />
         <GroundShadow tier={tier} />
       </Canvas>
+      {critters.caption && (
+        <p className="critter-quip">
+          <span aria-hidden="true">{critters.active?.critter.emoji}</span> {critters.caption}
+        </p>
+      )}
     </div>
   );
 }
