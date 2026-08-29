@@ -76,14 +76,23 @@ exists — that is the reminder. This file is never shipped to the browser.
 
 ## 4. 3D model — `models.tsx`
 
-Add a model function returning a `<group scale={S}>` of primitive meshes. Reuse
-the shared module-scope geometry (`ball`, `cone`, `capsule`, `wingGeo`), the
-`soft()` / `glow()` material helpers and the `<Eyes>` component. Author the parts
-around a roughly unit-tall origin and let the one `scale` on the wrapping group
-do the world sizing. Add a `case` to `CritterModel`.
+Two ways in, and they coexist — the glTF wins when present, the procedural one is
+the fallback.
 
-Scale reference: the gnome's head radius is ~0.46 and he stands ~2.2 units tall.
-A shoulder-height critter wants `scale` ≈ 1.1–1.2; a palm-sized one ≈ 0.35.
+**Preferred: an authored glTF.** Drop `<id>.glb` into `public/critters/` and add
+an entry to `critterModels.ts` (`file`, `scale`, `yaw`, `y`, optional `clip`).
+See `public/critters/README.md` for the authoring contract (Y-up, ground critters
+face +X / fliers +Z, origin between the feet, ≤ ~200 KB). `CritterModel` loads it
+through `GltfCritter` with Suspense + an error boundary, so a missing or broken
+file silently degrades to the procedural model.
+
+**Fallback: a procedural model.** Add a function returning a `<group scale={S}>`
+of primitive meshes — reuse the shared module-scope geometry (`ball`, `cone`,
+`capsule`, `wingGeo`), the `soft()` / `glow()` helpers, `<Eyes>`, the
+`Quadruped()` / `QuillBeast()` bases — and a `case` in `ProceduralCritter`.
+Author around a roughly unit-tall origin; the wrapping `scale` does the world
+sizing (gnome head radius ~0.46, he stands ~2.2 units; a shoulder-height critter
+wants `scale` ≈ 1.1, a palm-sized one ≈ 0.35).
 
 ## 5. 2D model — `components/OracleCanvas.tsx`
 

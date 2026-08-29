@@ -1,8 +1,10 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { Component, Suspense, type ReactNode } from "react";
 import * as THREE from "three";
 import type { CritterId } from "./catalog";
+import { CRITTER_MODELS } from "./critterModels";
+import { GltfCritter } from "./GltfCritter";
 
 /**
  * Critter models: SOFT PAINTED low-poly, deliberately not crystal.
@@ -681,8 +683,8 @@ function Chameleon({ tint }: { tint: string }) {
   );
 }
 
-/** Render the model for a critter id. */
-export function CritterModel({ id, tint }: { id: CritterId; tint: string }) {
+/** The all-primitive model for a critter id — the fallback when no glTF exists. */
+function ProceduralCritter({ id, tint }: { id: CritterId; tint: string }) {
   switch (id) {
     case "fairy": return <Fairy tint={tint} />;
     case "imp": return <Imp />;
@@ -703,5 +705,40 @@ export function CritterModel({ id, tint }: { id: CritterId; tint: string }) {
     case "hedgehog": return <Hedgehog tint={tint} />; case "goat": return <Goat tint={tint} />;
     case "porcupine": return <Porcupine tint={tint} />; case "chameleon": return <Chameleon tint={tint} />;
     default: return null;
+  }
+}
+
+/**
+ * Render the model for a critter id. Uses the authored glTF from
+ * `public/critters/` when `CRITTER_MODELS` has an entry for the id (and the file
+ * loads); otherwise the all-primitive `ProceduralCritter`.
+ */
+export function CritterModel({ id, tint }: { id: CritterId; tint: string }) {
+  const cfg = CRITTER_MODELS[id];
+  const fallback = <ProceduralCritter id={id} tint={tint} />;
+  if (!cfg) return fallback;
+  return (
+    <GltfErrorBoundary fallback={fallback}>
+      <Suspense fallback={fallback}>
+        <GltfCritter cfg={cfg} />
+      </Suspense>
+    </GltfErrorBoundary>
+  );
+}
+
+/** Falls back to the procedural model if the glTF 404s or fails to parse. */
+class GltfErrorBoundary extends Component<
+  { fallback: ReactNode; children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(err: unknown) {
+    console.warn("Critter glTF failed, using the procedural model:", err);
+  }
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
   }
 }
