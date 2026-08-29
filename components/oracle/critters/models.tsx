@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import * as THREE from "three";
 import type { CritterId } from "./catalog";
 
@@ -425,36 +426,260 @@ function Toad() {
   );
 }
 
-function WoodlandCritter({ id, tint }: { id: CritterId; tint: string }) {
-  const body = woodlandMaterial(tint);
-  const ear = id === "rabbit" || id === "goat" ? cone : ball;
-  const scale = id === "owl" || id === "bat" ? 0.55 : 0.48;
-  const tails = id === "fox" || id === "squirrel" || id === "raccoon" ? 1 : 0;
-  return <group scale={scale}>
-    <mesh geometry={ball} material={body} scale={[0.75, 0.58, 0.82]} />
-    <mesh geometry={ball} material={body} position={[0, 0.58, 0.3]} scale={[0.48, 0.46, 0.5]} />
-    {[-1, 1].map((s) => <mesh key={s} geometry={ear} material={body} position={[s * 0.3, 0.9, 0.2]} rotation={[0, 0, -s * 0.35]} scale={id === "rabbit" ? [0.13, 0.42, 0.1] : [0.16, 0.25, 0.12]} />)}
-    <Eyes x={0.18} y={0.62} z={0.66} r={0.105} pupil={0.06} />
-    {[-1, 1].map((s) => <mesh key={s} geometry={capsule} material={WOODLAND_DARK} position={[s * 0.28, -0.56, 0.08]} scale={[0.13, 0.24, 0.13]} />)}
-    {tails ? <mesh geometry={ball} material={body} position={[-0.58, 0.02, -0.28]} scale={[0.38, 0.5, 0.3]} /> : null}
-    {(id === "hedgehog" || id === "porcupine") && <mesh geometry={cone} material={WOODLAND_DARK} position={[0, 0.48, -0.32]} rotation={[Math.PI / 2, 0, 0]} scale={[0.5, 0.65, 0.5]} />}
-  </group>;
+// -- woodland-critter shared materials (module scope; see file header) --------
+const FUR_CREAM = soft("#e8dcc8", { roughness: 0.9 });
+const FUR_WHITE = soft("#f4efe6", { roughness: 0.9 });
+const HORN_PALE = soft("#efe3c2", { roughness: 0.6 });
+const BEAK_H = soft("#e0a54a", { roughness: 0.5 });
+const BAT_WING = soft("#443f5c", { roughness: 0.8 });
+const CHAM_DK = soft("#3f8a44", { roughness: 0.7 });
+const TONGUE = soft("#e08a7a", { roughness: 0.6 });
+
+type EarKind = "prick" | "round" | "long" | "tuft";
+type TailKind = "brush" | "puff" | "stub" | "none";
+
+/**
+ * Shared four-legged body plan for the woodland critters, faced +x. Built like
+ * `Deer` (body seated ~0.5 above the group origin, feet just below it) so the
+ * one `scale` knob sizes it in the world.
+ */
+function Quadruped({
+  fur, dark, scale, ear, tail, snout = 0.13, markings,
+}: {
+  fur: THREE.MeshStandardMaterial; dark: THREE.MeshStandardMaterial;
+  scale: number; ear: EarKind; tail: TailKind; snout?: number; markings?: ReactNode;
+}) {
+  return (
+    <group scale={scale}>
+      <mesh geometry={capsule} material={fur} position={[0, 0.5, 0]} rotation={[0, 0, Math.PI / 2]} scale={[0.28, 0.4, 0.3]} />
+      <mesh geometry={ball} material={fur} position={[-0.34, 0.5, 0]} scale={[0.3, 0.32, 0.3]} />
+      <mesh geometry={ball} material={fur} position={[0.3, 0.52, 0]} scale={[0.24, 0.26, 0.25]} />
+      <mesh geometry={capsule} material={fur} position={[0.42, 0.74, 0]} rotation={[0, 0, -0.8]} scale={[0.13, 0.22, 0.13]} />
+      <mesh geometry={ball} material={fur} position={[0.62, 0.9, 0]} scale={[0.22, 0.21, 0.24]} />
+      {snout > 0 && (
+        <mesh geometry={cone} material={fur} position={[0.78, 0.82, 0]} rotation={[0, 0, 1.35]} scale={[0.1, snout, 0.1]} />
+      )}
+      <mesh geometry={ball} material={EYE_DARK} position={[0.86, 0.79, 0]} scale={0.045} />
+      <Eyes x={0.02} y={0.96} z={0.2} r={0.055} pupil={0.036} />
+      {[-1, 1].map((s) => {
+        const p: [number, number, number] = [0.54, 1.04, s * 0.15];
+        if (ear === "prick")
+          return <mesh key={s} geometry={cone} material={fur} position={p} rotation={[s * 0.3, 0, -0.15]} scale={[0.07, 0.18, 0.045]} />;
+        if (ear === "tuft")
+          return <mesh key={s} geometry={cone} material={dark} position={p} rotation={[s * 0.4, 0, -0.05]} scale={[0.05, 0.15, 0.035]} />;
+        if (ear === "long")
+          return <mesh key={s} geometry={capsule} material={fur} position={[p[0] - 0.03, p[1] + 0.16, p[2]]} rotation={[s * 0.12, 0, -0.12]} scale={[0.05, 0.2, 0.035]} />;
+        return <mesh key={s} geometry={ball} material={fur} position={p} scale={0.1} />;
+      })}
+      {[-1, 1].map((s) =>
+        [0.3, -0.34].map((x, i) => (
+          <mesh key={`${s}-${i}`} geometry={capsule} material={dark} position={[x, 0.12, s * 0.17]} scale={[0.052, 0.26, 0.052]} />
+        ))
+      )}
+      {tail === "brush" && (
+        <mesh geometry={capsule} material={fur} position={[-0.56, 0.52, 0]} rotation={[0, 0, 0.7]} scale={[0.1, 0.32, 0.1]} />
+      )}
+      {tail === "puff" && <mesh geometry={ball} material={fur} position={[-0.5, 0.7, 0]} scale={[0.24, 0.32, 0.22]} />}
+      {tail === "stub" && <mesh geometry={ball} material={FUR_WHITE} position={[-0.5, 0.52, 0]} scale={0.09} />}
+      {markings}
+    </group>
+  );
 }
 
-// Named model entry points keep the catalog extensible and make each creature
-// independently replaceable with richer geometry later without changing the stage.
-const Wolf = ({ tint }: { tint: string }) => <WoodlandCritter id="wolf" tint={tint} />;
-const Bobcat = ({ tint }: { tint: string }) => <WoodlandCritter id="bobcat" tint={tint} />;
-const Fox = ({ tint }: { tint: string }) => <WoodlandCritter id="fox" tint={tint} />;
-const Rabbit = ({ tint }: { tint: string }) => <WoodlandCritter id="rabbit" tint={tint} />;
-const Raccoon = ({ tint }: { tint: string }) => <WoodlandCritter id="raccoon" tint={tint} />;
-const Owl = ({ tint }: { tint: string }) => <WoodlandCritter id="owl" tint={tint} />;
-const Bat = ({ tint }: { tint: string }) => <WoodlandCritter id="bat" tint={tint} />;
-const Squirrel = ({ tint }: { tint: string }) => <WoodlandCritter id="squirrel" tint={tint} />;
-const Hedgehog = ({ tint }: { tint: string }) => <WoodlandCritter id="hedgehog" tint={tint} />;
-const Goat = ({ tint }: { tint: string }) => <WoodlandCritter id="goat" tint={tint} />;
-const Porcupine = ({ tint }: { tint: string }) => <WoodlandCritter id="porcupine" tint={tint} />;
-const Chameleon = ({ tint }: { tint: string }) => <WoodlandCritter id="chameleon" tint={tint} />;
+function Wolf({ tint }: { tint: string }) {
+  const fur = woodlandMaterial(tint);
+  return (
+    <Quadruped fur={fur} dark={WOODLAND_DARK} scale={1.05} ear="prick" tail="brush" snout={0.18}
+      markings={<mesh geometry={ball} material={FUR_CREAM} position={[0.7, 0.78, 0]} scale={[0.12, 0.14, 0.16]} />} />
+  );
+}
+
+function Bobcat({ tint }: { tint: string }) {
+  const fur = woodlandMaterial(tint);
+  return (
+    <Quadruped fur={fur} dark={soft("#8a5c38", { roughness: 0.85 })} scale={0.78} ear="tuft" tail="stub" snout={0.09}
+      markings={
+        <>
+          {[-1, 1].map((s) => (
+            <mesh key={s} geometry={ball} material={WOODLAND_DARK} position={[0.5 + s * 0.03, 0.9, s * 0.06]} scale={[0.03, 0.09, 0.03]} />
+          ))}
+        </>
+      } />
+  );
+}
+
+function Fox({ tint }: { tint: string }) {
+  const fur = woodlandMaterial(tint);
+  return (
+    <Quadruped fur={fur} dark={soft("#2b2320", { roughness: 0.9 })} scale={0.72} ear="prick" tail="brush" snout={0.2}
+      markings={
+        <>
+          <mesh geometry={ball} material={FUR_WHITE} position={[0.72, 0.74, 0]} scale={[0.12, 0.12, 0.16]} />
+          <mesh geometry={capsule} material={FUR_WHITE} position={[-0.68, 0.44, 0]} rotation={[0, 0, 0.7]} scale={[0.07, 0.12, 0.07]} />
+        </>
+      } />
+  );
+}
+
+function Rabbit({ tint }: { tint: string }) {
+  const fur = woodlandMaterial(tint);
+  return (
+    <Quadruped fur={fur} dark={soft("#b39f90", { roughness: 0.9 })} scale={0.6} ear="long" tail="stub" snout={0.05} />
+  );
+}
+
+function Raccoon({ tint }: { tint: string }) {
+  const fur = woodlandMaterial(tint);
+  const dk = soft("#33373d", { roughness: 0.85 });
+  return (
+    <Quadruped fur={fur} dark={dk} scale={0.66} ear="round" tail="brush" snout={0.11}
+      markings={
+        <>
+          <mesh geometry={ball} material={dk} position={[0.7, 0.9, 0]} scale={[0.1, 0.08, 0.2]} />
+          {[0, 1, 2].map((i) => (
+            <mesh key={i} geometry={capsule} material={dk} position={[-0.44 - i * 0.14, 0.5 + i * 0.06, 0]} rotation={[0, 0, 0.7]} scale={[0.11, 0.05, 0.11]} />
+          ))}
+        </>
+      } />
+  );
+}
+
+function Squirrel({ tint }: { tint: string }) {
+  const fur = woodlandMaterial(tint);
+  return (
+    <group scale={0.5}>
+      <Quadruped fur={fur} dark={fur} scale={1} ear="round" tail="none" snout={0.07} />
+      {/* big S-curved tail arcing up behind */}
+      <mesh geometry={capsule} material={fur} position={[-0.5, 0.7, 0]} rotation={[0, 0, 1.5]} scale={[0.16, 0.34, 0.16]} />
+      <mesh geometry={ball} material={fur} position={[-0.5, 1.06, 0]} scale={[0.22, 0.3, 0.2]} />
+    </group>
+  );
+}
+
+function Goat({ tint }: { tint: string }) {
+  const fur = woodlandMaterial(tint);
+  return (
+    <Quadruped fur={fur} dark={soft("#a39a83", { roughness: 0.85 })} scale={0.8} ear="long" tail="stub" snout={0.14}
+      markings={
+        <>
+          {[-1, 1].map((s) => (
+            <mesh key={s} geometry={cone} material={HORN_PALE} position={[0.5, 1.06, s * 0.1]} rotation={[-0.9, 0, -s * 0.2]} scale={[0.05, 0.24, 0.05]} />
+          ))}
+          <mesh geometry={cone} material={FUR_WHITE} position={[0.82, 0.68, 0]} rotation={[Math.PI, 0, 0]} scale={[0.05, 0.14, 0.05]} />
+        </>
+      } />
+  );
+}
+
+function QuillBeast({ tint, scale, quills }: { tint: string; scale: number; quills: number }) {
+  const fur = woodlandMaterial(tint);
+  return (
+    <group scale={scale}>
+      <mesh geometry={ball} material={fur} position={[0, 0.42, 0]} scale={[0.5, 0.42, 0.56]} />
+      <mesh geometry={ball} material={FUR_CREAM} position={[0.44, 0.32, 0]} scale={[0.24, 0.22, 0.24]} />
+      <mesh geometry={cone} material={fur} position={[0.62, 0.3, 0]} rotation={[0, 0, 1.4]} scale={[0.09, 0.14, 0.09]} />
+      <mesh geometry={ball} material={EYE_DARK} position={[0.72, 0.3, 0]} scale={0.045} />
+      <Eyes x={0.02} y={0.42} z={0.32} r={0.05} pupil={0.032} />
+      {Array.from({ length: quills }, (_, i) => {
+        const a = (i / quills) * Math.PI * 1.5 - Math.PI * 0.25;
+        return (
+          <mesh key={i} geometry={cone} material={WOODLAND_DARK}
+            position={[Math.cos(a) * 0.3 - 0.1, 0.42 + Math.sin(a) * 0.3, ((i % 3) - 1) * 0.22]}
+            rotation={[0, 0, a - Math.PI / 2]} scale={[0.04, scale > 0.6 ? 0.36 : 0.22, 0.04]} />
+        );
+      })}
+      {[-1, 1].map((s) =>
+        [0.24, -0.28].map((x, i) => (
+          <mesh key={`${s}-${i}`} geometry={capsule} material={WOODLAND_DARK} position={[x, 0.06, s * 0.16]} scale={[0.045, 0.16, 0.045]} />
+        ))
+      )}
+    </group>
+  );
+}
+
+const Hedgehog = ({ tint }: { tint: string }) => <QuillBeast tint={tint} scale={0.5} quills={14} />;
+const Porcupine = ({ tint }: { tint: string }) => <QuillBeast tint={tint} scale={0.7} quills={18} />;
+
+/** Owl — round body, face disc, ear tufts, folded wings. Faces +z. Ref: critter-06. */
+function Owl({ tint }: { tint: string }) {
+  const fur = woodlandMaterial(tint);
+  return (
+    <group scale={0.62}>
+      <mesh geometry={ball} material={fur} position={[0, 0.2, 0]} scale={[0.5, 0.62, 0.46]} />
+      <mesh geometry={ball} material={FUR_CREAM} position={[0, 0.02, 0.34]} scale={[0.32, 0.42, 0.24]} />
+      {[-1, 1].map((s) => (
+        <mesh key={s} geometry={wingGeo} material={fur} position={[s * 0.44, 0.18, 0.02]} rotation={[Math.PI / 2, 0, s * 0.2]} scale={[0.2, 0.16, 0.6]} />
+      ))}
+      <mesh geometry={ball} material={fur} position={[0, 0.62, 0.18]} scale={[0.42, 0.4, 0.4]} />
+      <mesh geometry={ball} material={FUR_CREAM} position={[0, 0.58, 0.44]} scale={[0.34, 0.3, 0.16]} />
+      {[-1, 1].map((s) => (
+        <mesh key={s} geometry={cone} material={fur} position={[s * 0.24, 0.92, 0.1]} rotation={[-0.3, 0, -s * 0.5]} scale={[0.09, 0.22, 0.06]} />
+      ))}
+      <Eyes x={0.16} y={0.58} z={0.56} r={0.14} pupil={0.075} />
+      <mesh geometry={cone} material={BEAK_H} position={[0, 0.5, 0.56]} rotation={[1.5, 0, 0]} scale={[0.06, 0.12, 0.05]} />
+      {[-1, 1].map((s) => (
+        <mesh key={s} geometry={capsule} material={BEAK_H} position={[s * 0.12, -0.24, 0.1]} scale={[0.05, 0.1, 0.05]} />
+      ))}
+    </group>
+  );
+}
+
+/** Bat — small body, big membrane wings, faces +z. Ref: critter-07. */
+function Bat({ tint }: { tint: string }) {
+  const fur = woodlandMaterial(tint);
+  return (
+    <group scale={0.5}>
+      <mesh geometry={capsule} material={fur} position={[0, 0, 0]} scale={[0.22, 0.3, 0.22]} />
+      <mesh geometry={ball} material={fur} position={[0, 0.44, 0.06]} scale={[0.26, 0.24, 0.26]} />
+      {[-1, 1].map((s) => (
+        <mesh key={s} geometry={cone} material={fur} position={[s * 0.16, 0.66, 0]} rotation={[0, 0, -s * 0.3]} scale={[0.09, 0.2, 0.05]} />
+      ))}
+      <Eyes x={0.09} y={0.44} z={0.24} r={0.05} pupil={0.03} />
+      {[-1, 1].map((s) => (
+        <group key={s} position={[s * 0.12, 0.1, -0.04]} rotation={[0, s * -0.4, 0]}>
+          <mesh geometry={wingGeo} material={BAT_WING} rotation={[Math.PI / 2, 0, s * 1.2]} scale={[0.7, 0.05, 0.55]} />
+          <mesh geometry={capsule} material={fur} position={[s * 0.34, 0.04, 0]} rotation={[0, 0, s * 1.3]} scale={[0.03, 0.4, 0.03]} />
+        </group>
+      ))}
+    </group>
+  );
+}
+
+/** Chameleon — curl tail, casque crest, turret eyes. Faces +x. Ref: critter-12. */
+function Chameleon({ tint }: { tint: string }) {
+  const body = woodlandMaterial(tint);
+  return (
+    <group scale={0.5}>
+      <mesh geometry={ball} material={body} position={[0, 0.44, 0]} scale={[0.42, 0.36, 0.3]} />
+      {/* dorsal ridge */}
+      {[0.2, 0, -0.2].map((x, i) => (
+        <mesh key={i} geometry={cone} material={CHAM_DK} position={[x, 0.78 - i * 0.02, 0]} scale={[0.04, 0.1, 0.08]} />
+      ))}
+      {/* neck + head + casque */}
+      <mesh geometry={ball} material={body} position={[0.42, 0.56, 0]} scale={[0.22, 0.22, 0.22]} />
+      <mesh geometry={cone} material={CHAM_DK} position={[0.4, 0.82, 0]} rotation={[0, 0, -0.2]} scale={[0.16, 0.24, 0.12]} />
+      {/* turret eyes */}
+      {[-1, 1].map((s) => (
+        <group key={s} position={[0.44, 0.56, s * 0.18]}>
+          <mesh geometry={ball} material={body} scale={0.13} />
+          <mesh geometry={ball} material={EYE_DARK} position={[0.05, 0, s * 0.04]} scale={0.05} />
+        </group>
+      ))}
+      {/* snout */}
+      <mesh geometry={cone} material={body} position={[0.62, 0.5, 0]} rotation={[0, 0, 1.5]} scale={[0.1, 0.12, 0.1]} />
+      {/* splayed legs */}
+      {[-1, 1].map((s) =>
+        [0.24, -0.24].map((x, i) => (
+          <mesh key={`${s}-${i}`} geometry={capsule} material={CHAM_DK} position={[x, 0.2, s * 0.26]} rotation={[s * 0.5, 0, x > 0 ? 0.4 : -0.4]} scale={[0.05, 0.18, 0.05]} />
+        ))
+      )}
+      {/* curled tail */}
+      <mesh geometry={capsule} material={body} position={[-0.42, 0.4, 0]} rotation={[0, 0, 0.6]} scale={[0.07, 0.2, 0.07]} />
+      <mesh geometry={capsule} material={body} position={[-0.56, 0.26, 0]} rotation={[0, 0, 1.7]} scale={[0.05, 0.14, 0.05]} />
+      <mesh geometry={ball} material={body} position={[-0.5, 0.16, 0]} scale={0.07} />
+    </group>
+  );
+}
 
 /** Render the model for a critter id. */
 export function CritterModel({ id, tint }: { id: CritterId; tint: string }) {
