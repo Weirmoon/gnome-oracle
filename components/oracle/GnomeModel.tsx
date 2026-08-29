@@ -178,7 +178,7 @@ export default function GnomeModel({
   const blushGeo = useMemo(() => new THREE.SphereGeometry(0.082, 9, 7), []);
   const orbGeo = useMemo(() => new THREE.IcosahedronGeometry(0.11, 0), []);
   const staffGeo = useMemo(() => new THREE.CylinderGeometry(0.032, 0.042, 1.55, 7), []);
-  const hemGeo = useMemo(() => new THREE.TorusGeometry(0.452, 0.028, 5, 20), []);
+  const hemGeo = useMemo(() => new THREE.TorusGeometry(0.472, 0.032, 5, 22), []);
   const gemGeo = useMemo(() => new THREE.OctahedronGeometry(0.075, 0), []);
 
   useEffect(() => {
@@ -324,12 +324,12 @@ export default function GnomeModel({
           silhouette read chibi instead of as a floor-length cone. */}
       {[-0.21, 0.21].map((x) => (
         <group key={x}>
-          <mesh geometry={legGeo} material={mats.dark} position={[x, legTop - 0.12, 0]} />
+          <mesh geometry={legGeo} material={mats.dark} position={[x, legTop - 0.1, 0]} scale={[0.8, 0.7, 0.8]} />
           <mesh
             geometry={bootGeo}
             material={mats.dark}
             position={[x, GROUND_Y + 0.1, 0.05]}
-            scale={[1, 0.72, 1.42]}
+            scale={[0.85, 0.6, 1.3]}
           />
         </group>
       ))}
@@ -340,13 +340,20 @@ export default function GnomeModel({
         <mesh
           geometry={hemGeo}
           material={mats.accent}
-          position={[0, HEM_Y + 0.06, 0]}
+          position={[0, HEM_Y + 0.09, 0]}
           rotation={[-Math.PI / 2, 0, 0]}
         />
         <mesh geometry={gemGeo} material={mats.accent} position={[0, -0.3, frontZ(-0.3, 0.08)]} />
-        <mesh material={mats.accent} position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[0.4, 0.026, 5, 20]} />
-        </mesh>
+        {[-1, 1].map((s) => (
+          <mesh
+            key={s}
+            material={mats.accent}
+            position={[s * 0.19, -0.34, frontZ(-0.34, 0.23)]}
+            rotation={[0, s * -0.42, s * 0.1]}
+          >
+            <boxGeometry args={[0.038, 0.6, 0.028]} />
+          </mesh>
+        ))}
 
         <Torso appearance={appearance} mats={mats} />
         <Pattern appearance={appearance} mats={mats} />

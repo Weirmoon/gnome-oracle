@@ -14,7 +14,7 @@ import * as THREE from "three";
 /** World-space y of the ground / bottom of the boots. */
 export const GROUND_Y = -1.12;
 /** World-space y of the tunic hem. Boots + legs live below this. */
-export const HEM_Y = -0.78;
+export const HEM_Y = -0.9;
 /** World-space y of the shoulder line (top of the tunic lathe). */
 export const SHOULDER_Y = 0.16;
 /** Head centre, world space. */
@@ -28,11 +28,11 @@ export const HEAD_R = 0.46;
  */
 export const ROBE_PROFILE: [number, number][] = [
   [0.02, HEM_Y],
-  [0.44, HEM_Y + 0.01],
-  [0.46, -0.60],
-  [0.45, -0.34],
-  [0.43, -0.08],
-  [0.39, 0.05],
+  [0.47, HEM_Y + 0.01],
+  [0.46, -0.62],
+  [0.44, -0.34],
+  [0.42, -0.08],
+  [0.38, 0.05],
   [0.30, SHOULDER_Y],
   [0.15, SHOULDER_Y + 0.05],
 ];
@@ -83,3 +83,39 @@ export function headZ(y: number, x = 0, lift = 0.01): number {
   const inner = Math.max(0.01, HEAD_R * HEAD_R - x * x - y * y);
   return Math.sqrt(inner) + lift;
 }
+
+/**
+ * A costume shell: a copy of the tunic profile, slightly inflated, so a coat
+ * or shirt wraps the body instead of floating in front of it as a flat panel.
+ *
+ * `phiLength < 2π` leaves a gap at the FRONT (the lathe is rotated so the gap
+ * is centred on +Z), which is how the open coats on sheet 06 show the crystal
+ * robe underneath.
+ */
+export function makeShellGeometry(
+  inflate = 1.04,
+  phiLength = Math.PI * 2,
+  yFrom = -Infinity,
+  yTo = Infinity
+): THREE.LatheGeometry {
+  const pts = ROBE_PROFILE.filter(([, y]) => y >= yFrom && y <= yTo).map(
+    ([r, y]) => new THREE.Vector2(Math.max(0.015, r * inflate), y)
+  );
+  if (pts.length < 2) pts.push(new THREE.Vector2(0.02, yFrom));
+  // three's LatheGeometry puts phi=0 on +Z, so starting at gap/2 centres the
+  // opening on the FRONT of the body.
+  const gap = Math.PI * 2 - phiLength;
+  return new THREE.LatheGeometry(pts, ROBE_SEGMENTS, gap / 2, phiLength);
+}
+
+/** Shared, appearance-independent shells. Module scope so cycling personas allocates nothing. */
+export const SHELL = {
+  /** Full wrap — closed shirts, suits, coveralls. */
+  closed: makeShellGeometry(1.04),
+  /** Open front — coats and vests that reveal the robe beneath. */
+  open: makeShellGeometry(1.05, Math.PI * 2 - 0.95),
+  /** Upper body only (shirt half of a shirt+shorts pairing). */
+  upper: makeShellGeometry(1.04, Math.PI * 2, -0.3, Infinity),
+  /** Lower body only (shorts / trousers). */
+  lower: makeShellGeometry(1.05, Math.PI * 2, -Infinity, -0.24),
+};
