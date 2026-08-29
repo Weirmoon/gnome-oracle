@@ -84,10 +84,30 @@ a.navlink:hover {
   gap: 6px;
 }
 
-canvas.oracle {
+canvas.oracle,
+.oracle3d {
   width: 280px;
   height: 280px;
   filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.45));
+}
+
+.oracle3d canvas {
+  display: block;
+}
+
+/* Users who ask for reduced motion get the 2D avatar (see useAvatarCapability),
+   and we calm the rest of the UI's transitions too. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  canvas.oracle {
+    filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.4));
+  }
 }
 
 .bubble {

@@ -405,7 +405,8 @@ function makeDefaultVariants(base: Appearance): Appearance[] {
   }));
 }
 
-function shadeHex(hex: string, frac: number): string {
+/** Lighten (frac > 0) / darken (frac < 0) a hex color, returning `#rrggbb`. */
+export function shadeHex(hex: string, frac: number): string {
   const m = hex.replace("#", "");
   const full =
     m.length === 3

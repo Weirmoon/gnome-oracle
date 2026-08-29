@@ -1,6 +1,23 @@
 # gnome-oracle
 The Oracle of Truth
 
+## The avatar
+
+The on-screen oracle is procedural — no art assets. `components/oracle/OracleAvatar`
+picks the renderer at runtime:
+
+- **3D** (default on capable devices): a faceted "crystal gnome" built from
+  Three.js primitives via `@react-three/fiber`, re-skinned per persona. It reacts
+  while answering — a *thinking* beat, viseme-ish lip-sync (browser TTS word
+  boundaries), punctuation-driven gestures, and a held-item-specific finish
+  flourish. `three` is lazy-loaded, so it never touches the initial page bundle.
+- **2D** (`components/OracleCanvas`): the original hand-drawn `<canvas>`. Used
+  automatically on `prefers-reduced-motion`, when WebGL is unavailable, on
+  low-memory phones, or when picked in **⚙️ Settings → Avatar**.
+
+Settings also expose a **High / Low** quality tier (Low drops crystal
+transmission, MSAA, and DPR for weak GPUs).
+
 ## Windows 11
 
 This repo supports staying on Node 24 on Windows 11. If `better-sqlite3`

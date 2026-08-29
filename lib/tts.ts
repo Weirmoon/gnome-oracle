@@ -7,7 +7,18 @@ export interface TtsVoice {
   pitch: number; // 0 - 2
 }
 
+/** Emitted on each word/sentence boundary while an utterance plays. Drives the
+ *  avatar's mouth (see components/oracle/animation/lipSync.ts). */
+export interface TtsBoundary {
+  charIndex: number;
+  /** seconds since the utterance started. */
+  elapsedTime: number;
+  /** rough length of the word just started. */
+  wordLength: number;
+}
+
 type SpeakingCb = (speaking: boolean) => void;
+type BoundaryCb = (b: TtsBoundary) => void;
 
 class Tts {
   private muted = false;
@@ -16,6 +27,7 @@ class Tts {
   private volume = 1; // 0 - 1
   private active = 0; // utterances currently queued or playing
   private listeners = new Set<SpeakingCb>();
+  private boundaryListeners = new Set<BoundaryCb>();
 
   supported(): boolean {
     return typeof window !== "undefined" && "speechSynthesis" in window;
@@ -41,6 +53,11 @@ class Tts {
   onSpeakingChange(cb: SpeakingCb): () => void {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);
+  }
+
+  onBoundary(cb: BoundaryCb): () => void {
+    this.boundaryListeners.add(cb);
+    return () => this.boundaryListeners.delete(cb);
   }
 
   private notify() {
@@ -98,6 +115,17 @@ class Tts {
     u.rate = this.voice.rate;
     u.pitch = this.voice.pitch;
     u.volume = this.volume;
+    if (this.boundaryListeners.size) {
+      u.onboundary = (ev) => {
+        if (ev.name !== "word" && ev.name !== "sentence") return;
+        const rest = text.slice(ev.charIndex);
+        const m = /^\s*(\S+)/.exec(rest);
+        const wordLength = m ? m[1].replace(/[^A-Za-z']/g, "").length || 1 : 1;
+        this.boundaryListeners.forEach((cb) =>
+          cb({ charIndex: ev.charIndex, elapsedTime: ev.elapsedTime / 1000, wordLength })
+        );
+      };
+    }
     const done = () => {
       this.active = Math.max(0, this.active - 1);
       this.notify();

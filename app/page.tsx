@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import OracleCanvas from "@/components/OracleCanvas";
+import { OracleAvatar } from "@/components/oracle";
 import type { PersonaMeta } from "@/lib/persona";
 import { tts } from "@/lib/tts";
 import { sound } from "@/lib/sound";
@@ -16,6 +16,20 @@ interface Character {
 }
 
 type ResponseStyle = "funny-useful" | "mostly-comedy" | "oracle-chaos";
+
+type AvatarPref = "auto" | "3d" | "2d";
+type AvatarQualityPref = "high" | "low";
+
+const AVATAR_PREFS: { value: AvatarPref; label: string }[] = [
+  { value: "auto", label: "Auto" },
+  { value: "3d", label: "3D" },
+  { value: "2d", label: "2D" },
+];
+
+const AVATAR_QUALITIES: { value: AvatarQualityPref; label: string }[] = [
+  { value: "high", label: "High" },
+  { value: "low", label: "Low" },
+];
 
 interface Volumes {
   voice: number;
@@ -55,6 +69,9 @@ export default function Home() {
   const [outfitIndex, setOutfitIndex] = useState(0);
   const [responseStyle, setResponseStyle] = useState<ResponseStyle>("funny-useful");
   const [mood, setMood] = useState("default");
+  const [streamDone, setStreamDone] = useState(0);
+  const [avatarPref, setAvatarPref] = useState<AvatarPref>("auto");
+  const [avatarQuality, setAvatarQuality] = useState<AvatarQualityPref>("high");
   const abortRef = useRef<AbortController | null>(null);
 
   const selected = characters.find((c) => c.id === selectedId);
@@ -66,6 +83,8 @@ export default function Home() {
       : [];
   const selectedAppearance = outfits[outfitIndex] ?? selected?.meta.appearance;
   const moods = selected?.meta.moods?.length ? selected.meta.moods : ["default"];
+  const avatarQualityProp =
+    avatarPref === "auto" ? "auto" : avatarPref === "2d" ? "2d" : avatarQuality;
 
   // Load personas, music playlist, and persisted prefs; subscribe to TTS state.
   useEffect(() => {
@@ -87,6 +106,8 @@ export default function Home() {
     const storedStyle = localStorage.getItem("gnome.responseStyle");
     const storedMood = localStorage.getItem("gnome.mood");
     const storedOutfit = Number(localStorage.getItem("gnome.outfitIndex"));
+    const storedAvatar = localStorage.getItem("gnome.avatar");
+    const storedAvatarQuality = localStorage.getItem("gnome.avatarQuality");
     const voiceOnPref = voice === null ? true : voice === "1";
     const musicOnPref = music === null ? true : music === "1";
     const vols: Volumes = {
@@ -102,6 +123,12 @@ export default function Home() {
     if (isResponseStyle(storedStyle)) setResponseStyle(storedStyle);
     if (storedMood) setMood(storedMood);
     if (Number.isFinite(storedOutfit)) setOutfitIndex(Math.max(0, Math.min(3, storedOutfit)));
+    if (storedAvatar === "auto" || storedAvatar === "3d" || storedAvatar === "2d") {
+      setAvatarPref(storedAvatar);
+    }
+    if (storedAvatarQuality === "high" || storedAvatarQuality === "low") {
+      setAvatarQuality(storedAvatarQuality);
+    }
 
     tts.setMuted(!voiceOnPref);
     tts.setVolume(vols.voice);
@@ -162,6 +189,16 @@ export default function Home() {
   function changeMood(value: string) {
     setMood(value);
     localStorage.setItem("gnome.mood", value);
+  }
+
+  function changeAvatarPref(value: AvatarPref) {
+    setAvatarPref(value);
+    localStorage.setItem("gnome.avatar", value);
+  }
+
+  function changeAvatarQuality(value: AvatarQualityPref) {
+    setAvatarQuality(value);
+    localStorage.setItem("gnome.avatarQuality", value);
   }
 
   function toggleVoice() {
@@ -232,6 +269,7 @@ export default function Home() {
         tts.feed(text);
       }
       tts.end();
+      setStreamDone((n) => n + 1);
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         setAnswer("*The oracle stumbled.* Try again, brave soul.");
@@ -264,9 +302,9 @@ export default function Home() {
           <button
             className="iconbtn"
             onClick={() => setShowSettings((s) => !s)}
-            title="Sound settings"
+            title="Settings"
           >
-            ⚙️ Sound
+            ⚙️ Settings
           </button>
           <Link className="navlink" href="/history">
             📜 History
@@ -279,6 +317,36 @@ export default function Home() {
 
       {showSettings && (
         <div className="panel soundpanel">
+          <div className="soundrow">
+            <span className="iconbtn ghosticon">🔮</span>
+            <span className="soundlabel">Avatar</span>
+            <select
+              value={avatarPref}
+              onChange={(e) => changeAvatarPref(e.target.value as AvatarPref)}
+            >
+              {AVATAR_PREFS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {avatarPref !== "2d" && (
+            <div className="soundrow">
+              <span className="iconbtn ghosticon">✦</span>
+              <span className="soundlabel">Avatar quality</span>
+              <select
+                value={avatarQuality}
+                onChange={(e) => changeAvatarQuality(e.target.value as AvatarQualityPref)}
+              >
+                {AVATAR_QUALITIES.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="soundrow">
             <button className="iconbtn" onClick={toggleVoice}>
               {voiceOn ? "🔊" : "🔇"}
@@ -341,7 +409,16 @@ export default function Home() {
       </p>
 
       <div className="panel stage">
-        <OracleCanvas speaking={speaking} appearance={selectedAppearance} burst={burst} />
+        <OracleAvatar
+          speaking={speaking}
+          appearance={selectedAppearance}
+          burst={burst}
+          streaming={streaming}
+          answerText={answer}
+          streamDone={streamDone}
+          mood={mood}
+          quality={avatarQualityProp}
+        />
         <div className={`bubble ${answer ? "" : "placeholder"}`}>
           {answer ||
             (speaking ? "The oracle stirs…" : "Pick a persona and ask me something silly.")}

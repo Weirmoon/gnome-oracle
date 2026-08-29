@@ -27,6 +27,12 @@ interface Particle {
  * - Idle: gentle bob + twinkling stars + blink.
  * - speaking=true: mouth animates and the staff orb pulses.
  * - burst: bump this number to fire a sparkle pop (e.g. when an answer arrives).
+ *
+ * This is now the 2D FALLBACK renderer. `components/oracle/OracleAvatar` is the
+ * public component; it shows this canvas on `prefers-reduced-motion`, when WebGL
+ * is unavailable, or when the "2D" avatar setting is chosen, and otherwise
+ * lazy-loads the procedural 3D renderer (`OracleAvatar3D`). Keep this file's
+ * `{ speaking, appearance, burst }` contract stable.
  */
 export default function OracleCanvas({
   speaking,
