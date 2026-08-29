@@ -45,6 +45,8 @@ export function useCritterEvents({
   characterId,
   mood,
   reduced,
+  ambientOff,
+  intervalScale,
   voiceOn,
 }: {
   enabled: boolean;
@@ -52,7 +54,12 @@ export function useCritterEvents({
   streaming: boolean;
   characterId?: number;
   mood?: string;
+  /** Simplify motion (low tier or reduced motion) — paths lose their wobble. */
   reduced: boolean;
+  /** Reduced motion only: switches the ambient loop off entirely. */
+  ambientOff: boolean;
+  /** Stretch the ambient interval on weak devices and phones. */
+  intervalScale: number;
   voiceOn: boolean;
 }): { active: ActiveCritter | null; caption: string; api: CritterApi } {
   const [active, setActive] = useState<ActiveCritter | null>(null);
@@ -192,7 +199,9 @@ export function useCritterEvents({
 
   // Ambient loop.
   useEffect(() => {
-    if (!enabled || reduced) return;
+    // `reduced` alone must NOT stop this: a low-tier device still gets events,
+    // just fewer and with simpler paths. Only reduced motion turns them off.
+    if (!enabled || ambientOff) return;
     let cancelled = false;
     let timer = 0;
 
@@ -213,7 +222,7 @@ export function useCritterEvents({
           start(pickCritter(seen.current));
         }
         schedule();
-      }, rand(AMBIENT_MIN_MS, AMBIENT_MAX_MS));
+      }, rand(AMBIENT_MIN_MS, AMBIENT_MAX_MS) * intervalScale);
     };
     schedule();
 
@@ -221,7 +230,7 @@ export function useCritterEvents({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [enabled, reduced, start]);
+  }, [enabled, ambientOff, intervalScale, start]);
 
   // Tear everything down on unmount.
   useEffect(() => {

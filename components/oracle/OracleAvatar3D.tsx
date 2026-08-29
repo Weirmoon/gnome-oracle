@@ -14,6 +14,13 @@ import { feedGestureText, resetGestures } from "./animation/gestures";
 import CritterStage from "./critters/CritterStage";
 import { useCritterEvents } from "./critters/useCritterEvents";
 
+const LOW_TIER_INTERVAL_SCALE = 1.8;
+const MOBILE_INTERVAL_SCALE = 1.6;
+
+function isCoarsePointer(): boolean {
+  return typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
+}
+
 const DEFAULT_APPEARANCE: Appearance = {
   hat: "wizard",
   hatColor: "#3a2470",
@@ -55,6 +62,9 @@ export default function OracleAvatar3D(props: Props) {
     characterId: props.characterId,
     mood: props.mood,
     reduced: tier === "low" || !!props.reducedMotion,
+    ambientOff: !!props.reducedMotion,
+    // Weak devices and phones get the same roster, just further apart.
+    intervalScale: (tier === "low" ? LOW_TIER_INTERVAL_SCALE : 1) * (isCoarsePointer() ? MOBILE_INTERVAL_SCALE : 1),
     voiceOn: !!props.voiceOn,
   });
 
