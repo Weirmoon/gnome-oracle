@@ -2,6 +2,23 @@
 
 import { useEffect, useRef } from "react";
 import type { Appearance } from "@/lib/persona";
+import type {
+  CritterId,
+  CritterReaction,
+  CritterSide,
+} from "@/components/oracle/critters/catalog";
+
+/** The active critter, as handed down by `OracleAvatar`. */
+export interface CanvasCritter {
+  id: CritterId;
+  reaction: CritterReaction;
+  side: CritterSide;
+  /** performance.now() when the event began. */
+  startedAt: number;
+  durationMs: number;
+  /** True once the enter beat is done and the gnome should be reacting. */
+  reacting: boolean;
+}
 
 const DEFAULT_APPEARANCE: Appearance = {
   hat: "wizard",
@@ -38,10 +55,16 @@ export default function OracleCanvas({
   speaking,
   appearance,
   burst = 0,
+  critter = null,
+  reducedMotion = false,
 }: {
   speaking: boolean;
   appearance?: Appearance;
   burst?: number;
+  /** Active ambient critter (both renderers share the loop in `OracleAvatar`). */
+  critter?: CanvasCritter | null;
+  /** Suppress critter idle wobble (loop itself is gated upstream). */
+  reducedMotion?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const speakingRef = useRef(speaking);
@@ -50,6 +73,12 @@ export default function OracleCanvas({
   apRef.current = appearance ?? DEFAULT_APPEARANCE;
   const burstRef = useRef(burst);
   const particlesRef = useRef<Particle[]>([]);
+  const critterRef = useRef<CanvasCritter | null>(critter);
+  critterRef.current = critter;
+  const reducedRef = useRef(reducedMotion);
+  reducedRef.current = reducedMotion;
+  /** Frame counter for throttling spell sparkles during a `zap`. */
+  const zapTickRef = useRef(0);
 
   // When `burst` changes, spawn a pop of sparkles.
   useEffect(() => {
@@ -95,6 +124,13 @@ export default function OracleCanvas({
 
       const bob = Math.sin(t * 2) * 4;
       const cx = SIZE / 2;
+
+      // ---- Active critter: position + whether the gnome is turning to it ----
+      const cr = critterRef.current;
+      const crv = cr ? critterView(cr, now, reducedRef.current) : null;
+      const lookX = crv && cr?.reacting ? clamp(crv.anchorX * 0.05, -4, 4) : 0;
+      const hideHat = !!(cr?.reacting && cr.reaction === "grab-hat");
+
       ctx!.save();
       ctx!.translate(cx, 150 + bob);
 
@@ -131,7 +167,9 @@ export default function OracleCanvas({
       drawTorso(ctx!, ap);
       drawPattern(ctx!, ap);
 
-      // ---- Head ----
+      // ---- Head (turns slightly toward an active critter) ----
+      ctx!.save();
+      ctx!.translate(lookX, 0);
       ctx!.fillStyle = ap.skin;
       ctx!.beginPath();
       ctx!.arc(0, -28, 26, 0, Math.PI * 2);
@@ -184,8 +222,9 @@ export default function OracleCanvas({
       ctx!.ellipse(7, -14, 7, 4, 0, 0, Math.PI * 2);
       ctx!.fill();
 
-      // ---- Hat (varies by persona) ----
-      drawHat(ctx!, ap, t);
+      // ---- Hat (varies by persona; a crow/gust may have taken it) ----
+      if (!hideHat) drawHat(ctx!, ap, t);
+      ctx!.restore(); // head-turn group
 
       // ---- Costume accessory / handheld prop ----
       drawAccessory(ctx!, ap, t);
@@ -211,6 +250,26 @@ export default function OracleCanvas({
         drawStar(ctx!, p.x, p.y, p.size, ap.accent, a);
       }
       ctx!.restore();
+
+      // ---- Ambient critter (screen-space, over the gnome) ----
+      if (crv && cr) {
+        if (cr.reacting && cr.reaction === "zap" && !reducedRef.current) {
+          zapTickRef.current += 1;
+          if (zapTickRef.current % 16 === 0) spawnZap(particlesRef.current, crv.x, crv.y);
+        }
+        ctx!.save();
+        ctx!.translate(cx, 150 + bob);
+        ctx!.translate(crv.x, crv.y);
+        const sc = CRITTER_SCALE[cr.id] ?? 1;
+        ctx!.scale(crv.flip ? -sc : sc, sc);
+        ctx!.globalAlpha = crv.alpha;
+        // A soft drop shadow lifts the critter off the gnome / background.
+        ctx!.shadowColor = "rgba(0,0,0,0.4)";
+        ctx!.shadowBlur = 4;
+        ctx!.shadowOffsetY = 1;
+        drawCritter(ctx!, cr.id, t);
+        ctx!.restore();
+      }
 
       raf = requestAnimationFrame(draw);
     }
@@ -1388,4 +1447,1021 @@ function shade(hex: string, frac: number): string {
   g = adj(g);
   b = adj(b);
   return `rgb(${r},${g},${b})`;
+}
+
+// ===================================================================
+//  Ambient critters — the 2D counterpart of components/oracle/critters
+// ===================================================================
+
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+const critterEase = (k: number) => 1 - Math.pow(1 - k, 3);
+
+/** Per-critter size multiplier so the smaller ones still read at thumbnail size. */
+const CRITTER_SCALE: Partial<Record<CritterId, number>> = {
+  fairy: 1.2,
+  crow: 1.25,
+  wisp: 1.15,
+  moth: 1.1,
+  snail: 1.15,
+  toad: 1.1,
+  dragon: 1.15,
+  deer: 1.15,
+  rabbit: 1.15,
+  squirrel: 1.15,
+  hedgehog: 1.2,
+  bat: 1.15,
+  chameleon: 1.1,
+  owl: 1.1,
+};
+
+/** Critters that stand on the ground rather than hover. */
+const GROUNDED: Partial<Record<CritterId, true>> = {
+  deer: true,
+  dragon: true,
+  toad: true,
+  snail: true,
+  imp: true,
+  wolf: true,
+  bobcat: true,
+  fox: true,
+  rabbit: true,
+  raccoon: true,
+  squirrel: true,
+  hedgehog: true,
+  goat: true,
+  porcupine: true,
+  chameleon: true,
+};
+
+interface CritterView {
+  x: number;
+  y: number;
+  alpha: number;
+  /** Hold-point x, used for the gnome's head turn. */
+  anchorX: number;
+  /** Flip horizontally so the critter faces the gnome. */
+  flip: boolean;
+}
+
+/**
+ * Body-space position of the active critter this frame. Mirrors
+ * `CritterStage`'s ENTER (0.22) / EXIT (0.78) travel split, in 2D canvas units
+ * over the ~280px stage. Origin is the gnome's chest, +y down.
+ */
+function critterView(cr: CanvasCritter, now: number, reduced: boolean): CritterView {
+  const frac = clamp((now - cr.startedAt) / cr.durationMs, 0, 1);
+  const grounded = !!GROUNDED[cr.id];
+
+  // `front` critters are nudged off-centre so the speech bubble (which overlays
+  // the lower-centre of the 2D stage) doesn't hide them.
+  let ax = 0;
+  if (cr.side === "left") ax = -76;
+  else if (cr.side === "right") ax = 76;
+  else if (cr.side === "top") ax = 6;
+  else ax = 60;
+
+  // Grounded critters ride at ~waist height, not at the feet — that keeps them
+  // clear of both the speech bubble and the bottom-left `.critter-quip` caption.
+  let ay: number;
+  if (cr.side === "top") ay = cr.id === "raincloud" ? -110 : -100;
+  else if (cr.side === "front") ay = grounded ? 26 : 4;
+  else ay = grounded ? 28 : -26;
+
+  let ex = ax;
+  let ey = ay;
+  if (cr.side === "left") ex = -240;
+  else if (cr.side === "right") ex = 240;
+  else if (cr.side === "top") ey = -280;
+  else ey = 220;
+
+  const ENTER = 0.22;
+  const EXIT = 0.78;
+  let x: number;
+  let y: number;
+  let alpha: number;
+  if (frac < ENTER) {
+    const k = critterEase(frac / ENTER);
+    x = ex + (ax - ex) * k;
+    y = ey + (ay - ey) * k;
+    alpha = k;
+  } else if (frac < EXIT) {
+    x = ax;
+    y = ay;
+    alpha = 1;
+  } else {
+    const k = critterEase((frac - EXIT) / (1 - EXIT));
+    x = ax + (ex - ax) * k;
+    y = ay + (ey - ay) * k;
+    alpha = 1 - k;
+  }
+
+  if (!reduced && frac >= ENTER && frac < EXIT) {
+    const T = (now - cr.startedAt) / 1000;
+    if (grounded) {
+      y += Math.abs(Math.sin(T * 4)) * 2;
+    } else {
+      x += Math.sin(T * 3.1) * 4;
+      y += Math.sin(T * 4.3) * 3;
+    }
+  }
+
+  return { x, y, alpha, anchorX: ax, flip: ax > 6 };
+}
+
+/** Spawn a few spell shards travelling from the gnome's hand toward the critter. */
+function spawnZap(parts: Particle[], tx: number, ty: number) {
+  const fromX = 44;
+  const fromY = -12;
+  const dx = tx - fromX;
+  const dy = ty - fromY;
+  const d = Math.hypot(dx, dy) || 1;
+  for (let i = 0; i < 4; i++) {
+    parts.push({
+      x: fromX,
+      y: fromY,
+      vx: (dx / d) * 3 + (Math.random() - 0.5),
+      vy: (dy / d) * 3 + (Math.random() - 0.5),
+      life: 0,
+      max: 18 + Math.random() * 10,
+      size: 2 + Math.random() * 2,
+    });
+  }
+}
+
+/** Soft-painted palette, mirroring the 3D `soft()` consts in critters/models.tsx. */
+const CC = {
+  fairySkin: "#f6d9b0",
+  fairyWing: "#8ef0d0",
+  impSkin: "#8bb04a",
+  impDk: "#5f7d31",
+  cloud: "#6b7183",
+  cloudDk: "#4d5364",
+  rain: "#9ec8ee",
+  dragonBody: "#4f7a45",
+  dragonBelly: "#cdae6a",
+  dragonDk: "#35592f",
+  horn: "#efe3c2",
+  deerCoat: "#c8a878",
+  deerDk: "#7c5c3c",
+  mothWing: "#bfe9c4",
+  mothBody: "#e6efd9",
+  crowBody: "#1d2233",
+  crowBeak: "#c8b45a",
+  toadBody: "#7b9a52",
+  toadDk: "#5d7a3d",
+  toadEye: "#e0a54a",
+  snailBody: "#e4cba6",
+  snailShell: "#c98a3f",
+  wisp: "#8fe6e0",
+  firefly: "#ffe08a",
+  fireflyBody: "#3a3226",
+  leaf: "#9aa86a",
+  dark: "#1b1620",
+} as const;
+
+interface BeastCfg {
+  body: string;
+  dark: string;
+  ear: "prick" | "round" | "long" | "tuft";
+  tail: "brush" | "stub" | "thin" | "none";
+  snout?: number;
+  mask?: boolean;
+  horns?: boolean;
+  beard?: boolean;
+}
+
+/** Shared small-mammal body plan (wolf / fox / rabbit / …), facing +x. */
+function drawBeast(ctx: CanvasRenderingContext2D, cfg: BeastCfg) {
+  const { body, dark } = cfg;
+  ctx.strokeStyle = dark;
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  for (const lx of [-9, -3, 5, 10]) {
+    ctx.beginPath();
+    ctx.moveTo(lx, 5);
+    ctx.lineTo(lx + (lx > 0 ? 1 : -1), 19);
+    ctx.stroke();
+  }
+  if (cfg.tail === "brush") {
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.ellipse(-16, -3, 8, 5, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (cfg.tail === "thin") {
+    ctx.strokeStyle = body;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-11, 1);
+    ctx.quadraticCurveTo(-22, -3, -19, -12);
+    ctx.stroke();
+  } else if (cfg.tail === "stub") {
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(-12, -2, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.ellipse(0, -1, 13, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+  const hx = 13;
+  const hy = -8;
+  ctx.beginPath();
+  ctx.arc(hx, hy, 7, 0, Math.PI * 2);
+  ctx.fill();
+  if (cfg.snout) {
+    ctx.beginPath();
+    ctx.moveTo(hx + 3, hy - 1);
+    ctx.lineTo(hx + 3 + cfg.snout, hy + 1);
+    ctx.lineTo(hx + 3, hy + 3.5);
+    ctx.closePath();
+    ctx.fill();
+  }
+  for (const s of [-1, 1]) {
+    ctx.save();
+    ctx.translate(hx - 2, hy - 5);
+    ctx.beginPath();
+    if (cfg.ear === "prick") {
+      ctx.moveTo(0, 0);
+      ctx.lineTo(s * 3, -7);
+      ctx.lineTo(s * 5, 1);
+    } else if (cfg.ear === "round") {
+      ctx.arc(s * 3, -2, 3.6, 0, Math.PI * 2);
+    } else if (cfg.ear === "long") {
+      ctx.ellipse(s * 2, -6, 2.6, 7, s * 0.2, 0, Math.PI * 2);
+    } else {
+      ctx.moveTo(0, 0);
+      ctx.lineTo(s * 2, -6);
+      ctx.lineTo(s * 4, -1);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  if (cfg.mask) {
+    ctx.fillStyle = dark;
+    ctx.beginPath();
+    ctx.ellipse(hx + 1, hy, 5, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (cfg.horns) {
+    ctx.strokeStyle = "#efe3c2";
+    ctx.lineWidth = 2.5;
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(hx - 3, hy - 5);
+      ctx.quadraticCurveTo(hx - 7 + s * 2, hy - 13, hx - 1 + s * 5, hy - 10);
+      ctx.stroke();
+    }
+  }
+  if (cfg.beard) {
+    ctx.fillStyle = "#efe9dc";
+    ctx.beginPath();
+    ctx.moveTo(hx + 1, hy + 4);
+    ctx.lineTo(hx + 5, hy + 11);
+    ctx.lineTo(hx - 1, hy + 5);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.fillStyle = CC.dark;
+  ctx.beginPath();
+  ctx.arc(hx + 2, hy - 1, 1.3, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/**
+ * Draw one critter around a local origin, facing +x. Sized to read against the
+ * ~52px gnome head. Flat fills only — this is the low-power renderer.
+ */
+function drawCritter(ctx: CanvasRenderingContext2D, id: CritterId, t: number) {
+  switch (id) {
+    case "fairy": {
+      ctx.fillStyle = CC.fairyWing;
+      for (const s of [-1, 1]) {
+        ctx.save();
+        ctx.translate(-2, -3);
+        ctx.rotate(s * 0.5 + Math.sin(t * 20) * 0.15);
+        ctx.beginPath();
+        ctx.ellipse(-4, 0, 7, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.fillStyle = CC.fairySkin;
+      ctx.beginPath();
+      ctx.ellipse(0, 2, 5, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0, -8, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = CC.dark;
+      ctx.beginPath();
+      ctx.arc(2, -8, 1.3, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case "imp": {
+      ctx.fillStyle = CC.impSkin;
+      ctx.beginPath();
+      ctx.ellipse(0, 2, 9, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0, -10, 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = CC.impDk;
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(s * 6, -12);
+        ctx.lineTo(s * 16, -18);
+        ctx.lineTo(s * 7, -4);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.strokeStyle = CC.impSkin;
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(-7, 9);
+      ctx.quadraticCurveTo(-16, 6, -14, -3);
+      ctx.stroke();
+      ctx.lineWidth = 3;
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(s * 4, 10);
+        ctx.lineTo(s * 5, 20);
+        ctx.stroke();
+      }
+      ctx.fillStyle = CC.dark;
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(s * 3, -10, 1.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#ffd66b";
+      ctx.beginPath();
+      ctx.arc(10, 0, 3, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case "raincloud": {
+      ctx.fillStyle = CC.cloud;
+      for (const b of [
+        [-8, 0, 10],
+        [6, -1, 11],
+        [-1, -6, 8],
+        [14, 3, 7],
+        [-15, 3, 7],
+      ]) {
+        ctx.beginPath();
+        ctx.arc(b[0], b[1], b[2], 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = CC.cloudDk;
+      ctx.beginPath();
+      ctx.arc(2, 4, 9, 0, Math.PI);
+      ctx.fill();
+      ctx.fillStyle = CC.dark;
+      ctx.beginPath();
+      ctx.arc(-4, -1, 1.6, 0, Math.PI * 2);
+      ctx.arc(6, -1, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = CC.rain;
+      ctx.lineWidth = 2;
+      ctx.lineCap = "round";
+      for (const rx of [-12, -4, 4, 12]) {
+        const o = (Math.sin(t * 6 + rx) * 0.5 + 0.5) * 6;
+        ctx.beginPath();
+        ctx.moveTo(rx, 12 + o);
+        ctx.lineTo(rx - 2, 20 + o);
+        ctx.stroke();
+      }
+      break;
+    }
+    case "dragon": {
+      ctx.fillStyle = CC.dragonDk;
+      ctx.beginPath();
+      ctx.moveTo(-4, -6);
+      ctx.quadraticCurveTo(-30, -24, -34, 4);
+      ctx.quadraticCurveTo(-18, -4, -4, 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = CC.dragonBody;
+      ctx.lineWidth = 7;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(-8, 6);
+      ctx.quadraticCurveTo(-24, 14, -31, 5);
+      ctx.stroke();
+      ctx.fillStyle = CC.dragonBody;
+      for (const lx of [-6, 10]) {
+        ctx.beginPath();
+        ctx.ellipse(lx, 15, 5, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.beginPath();
+      ctx.ellipse(0, 2, 17, 15, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = CC.dragonBelly;
+      ctx.beginPath();
+      ctx.ellipse(4, 7, 10, 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = CC.dragonDk;
+      ctx.beginPath();
+      ctx.moveTo(0, -8);
+      ctx.quadraticCurveTo(-8, -34, 10, -30);
+      ctx.quadraticCurveTo(20, -16, 6, -4);
+      ctx.closePath();
+      ctx.fill();
+      for (const p of [
+        [-10, -12],
+        [-2, -15],
+        [7, -13],
+      ]) {
+        ctx.beginPath();
+        ctx.moveTo(p[0] - 3, p[1] + 4);
+        ctx.lineTo(p[0], p[1] - 3);
+        ctx.lineTo(p[0] + 3, p[1] + 4);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.fillStyle = CC.dragonBody;
+      ctx.beginPath();
+      ctx.moveTo(10, -6);
+      ctx.lineTo(16, -20);
+      ctx.lineTo(24, -18);
+      ctx.lineTo(18, -2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(24, -21, 9, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(30, -22);
+      ctx.lineTo(37, -20);
+      ctx.lineTo(30, -16);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = CC.horn;
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(21, -27);
+      ctx.lineTo(17, -36);
+      ctx.moveTo(26, -27);
+      ctx.lineTo(25, -37);
+      ctx.stroke();
+      ctx.fillStyle = CC.dark;
+      ctx.beginPath();
+      ctx.arc(26, -22, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(200,200,200,0.35)";
+      ctx.beginPath();
+      ctx.arc(39 + Math.sin(t * 3) * 2, -22, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case "deer": {
+      ctx.strokeStyle = CC.deerDk;
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      for (const lx of [-11, -4, 6, 12]) {
+        ctx.beginPath();
+        ctx.moveTo(lx, 4);
+        ctx.lineTo(lx + (lx > 0 ? 2 : -2), 34);
+        ctx.stroke();
+      }
+      ctx.fillStyle = CC.deerCoat;
+      ctx.beginPath();
+      ctx.ellipse(0, -2, 17, 11, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(-12, -3, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(9, -8);
+      ctx.lineTo(16, -24);
+      ctx.lineTo(22, -22);
+      ctx.lineTo(14, -4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(21, -25, 7, 5, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(27, -27, 3, 2.5, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(16, -30, 3, 5, -0.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = CC.deerDk;
+      ctx.lineWidth = 2.4;
+      for (const s of [0, 1]) {
+        ctx.save();
+        ctx.translate(19, -31);
+        ctx.rotate(s ? -0.35 : 0.12);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-2, -12);
+        ctx.lineTo(3, -20);
+        ctx.moveTo(-1, -7);
+        ctx.lineTo(-7, -11);
+        ctx.moveTo(0, -14);
+        ctx.lineTo(-5, -19);
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.fillStyle = CC.dark;
+      ctx.beginPath();
+      ctx.arc(23, -26, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,246,224,0.5)";
+      for (const d of [
+        [-6, -4],
+        [2, -6],
+        [-2, 2],
+      ]) {
+        ctx.beginPath();
+        ctx.arc(d[0], d[1], 1.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    }
+    case "crow": {
+      ctx.fillStyle = CC.crowBody;
+      ctx.beginPath();
+      ctx.ellipse(-2, 2, 12, 9, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-6, 0);
+      ctx.quadraticCurveTo(-22, -6, -24, 4);
+      ctx.quadraticCurveTo(-12, 6, -4, 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-10, 4);
+      ctx.lineTo(-22, 12);
+      ctx.lineTo(-8, 10);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(8, -8, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = CC.crowBeak;
+      ctx.beginPath();
+      ctx.moveTo(14, -9);
+      ctx.lineTo(24, -7);
+      ctx.lineTo(14, -4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#f4d97a";
+      ctx.beginPath();
+      ctx.arc(9, -9, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#3a2470";
+      ctx.beginPath();
+      ctx.moveTo(19, -4);
+      ctx.lineTo(31, -4);
+      ctx.lineTo(25, -17);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    case "moth": {
+      ctx.fillStyle = CC.mothWing;
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.ellipse(0, s * 7, 12, 8, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(-2, s * 8);
+        ctx.lineTo(-10, s * 20);
+        ctx.lineTo(4, s * 12);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.fillStyle = CC.mothBody;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 3.5, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = CC.mothBody;
+      ctx.lineWidth = 1.5;
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(s * 1, -9);
+        ctx.quadraticCurveTo(s * 6, -16, s * 3, -20);
+        ctx.stroke();
+      }
+      break;
+    }
+    case "fireflies": {
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + t * 0.6;
+        const r = 7 + (i % 3) * 4;
+        const fx = Math.cos(a) * r;
+        const fy = Math.sin(a * 1.3) * r * 0.7;
+        ctx.fillStyle = CC.fireflyBody;
+        ctx.beginPath();
+        ctx.arc(fx, fy, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = CC.firefly;
+        ctx.beginPath();
+        ctx.arc(fx + 1, fy + 1, 2.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      break;
+    }
+    case "toad": {
+      ctx.fillStyle = CC.toadBody;
+      ctx.beginPath();
+      ctx.ellipse(0, 4, 15, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = CC.toadDk;
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.ellipse(s * 11, 10, 5, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = CC.toadBody;
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(s * 6, -4, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = CC.toadEye;
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(s * 6, -5, 2.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = CC.dark;
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(s * 6, -5, 1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.strokeStyle = CC.toadDk;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-6, 6);
+      ctx.lineTo(6, 6);
+      ctx.stroke();
+      break;
+    }
+    case "snail": {
+      ctx.fillStyle = CC.snailBody;
+      ctx.beginPath();
+      ctx.ellipse(2, 6, 14, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(14, 1, 5, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = CC.snailBody;
+      ctx.lineWidth = 2;
+      for (const s of [0, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(15, -3);
+        ctx.lineTo(16 + s * 3, -12);
+        ctx.stroke();
+        ctx.fillStyle = CC.snailBody;
+        ctx.beginPath();
+        ctx.arc(16 + s * 3, -13, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = CC.snailShell;
+      ctx.beginPath();
+      ctx.arc(-2, -1, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#8a5a25";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(-2, -1, 6, 0, Math.PI * 1.6);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(-1, 0, 3, 0, Math.PI * 1.8);
+      ctx.stroke();
+      break;
+    }
+    case "wisp": {
+      ctx.fillStyle = "rgba(143,230,224,0.32)";
+      for (let i = 1; i <= 3; i++) {
+        ctx.beginPath();
+        ctx.arc(0, i * 7, 6 - i * 1.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = "rgba(143,230,224,0.26)";
+      ctx.beginPath();
+      ctx.arc(0, 0, 11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = CC.wisp;
+      ctx.beginPath();
+      ctx.arc(0, 0, 6.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#0b3b39";
+      ctx.beginPath();
+      ctx.arc(-2, -1, 1, 0, Math.PI * 2);
+      ctx.arc(2, -1, 1, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case "gust": {
+      ctx.strokeStyle = "rgba(207,227,245,0.7)";
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = "round";
+      for (let i = 0; i < 4; i++) {
+        const y = -14 + i * 9;
+        ctx.beginPath();
+        ctx.moveTo(-12, y);
+        ctx.quadraticCurveTo(6, y - 4 + Math.sin(t * 4 + i) * 2, 16, y + 3);
+        ctx.stroke();
+      }
+      ctx.fillStyle = CC.leaf;
+      for (const p of [
+        [8, -6],
+        [-6, 6],
+        [12, 10],
+      ]) {
+        ctx.save();
+        ctx.translate(p[0], p[1]);
+        ctx.rotate(t * 2 + p[0]);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 3, 1.6, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      break;
+    }
+    case "wolf": {
+      drawBeast(ctx, { body: "#8f9aaa", dark: "#5c6470", ear: "prick", tail: "brush", snout: 6 });
+      ctx.fillStyle = "#c9d0d8";
+      ctx.beginPath();
+      ctx.moveTo(13, -4);
+      ctx.lineTo(20, -2);
+      ctx.lineTo(13, 1);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    case "bobcat": {
+      drawBeast(ctx, { body: "#c98b5b", dark: "#8a5c38", ear: "tuft", tail: "stub", snout: 3 });
+      ctx.strokeStyle = "#8a5c38";
+      ctx.lineWidth = 1.4;
+      for (const sx of [-6, 0, 6]) {
+        ctx.beginPath();
+        ctx.moveTo(sx, -8);
+        ctx.lineTo(sx + 1, 3);
+        ctx.stroke();
+      }
+      break;
+    }
+    case "fox": {
+      drawBeast(ctx, { body: "#e47738", dark: "#a8501f", ear: "prick", tail: "brush", snout: 6 });
+      ctx.fillStyle = "#f4ead9";
+      ctx.beginPath();
+      ctx.ellipse(-17, -4, 3.5, 3, -0.4, 0, Math.PI * 2); // white tail tip
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(13, -2);
+      ctx.lineTo(21, 1);
+      ctx.lineTo(13, 3);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    case "rabbit": {
+      drawBeast(ctx, { body: "#e4d5c8", dark: "#b39f90", ear: "long", tail: "stub", snout: 2 });
+      ctx.fillStyle = "#fdf7f0";
+      ctx.beginPath();
+      ctx.arc(-12, -2, 3.5, 0, Math.PI * 2); // cotton tail
+      ctx.fill();
+      break;
+    }
+    case "raccoon": {
+      drawBeast(ctx, { body: "#87909a", dark: "#3d4149", ear: "round", tail: "brush", snout: 3, mask: true });
+      ctx.strokeStyle = "#3d4149";
+      ctx.lineWidth = 2;
+      for (const rx of [-19, -15, -11]) {
+        ctx.beginPath();
+        ctx.moveTo(rx, -7);
+        ctx.lineTo(rx, 1);
+        ctx.stroke();
+      }
+      break;
+    }
+    case "squirrel": {
+      ctx.fillStyle = "#ad7044";
+      ctx.beginPath(); // big curled tail behind
+      ctx.moveTo(-8, 4);
+      ctx.quadraticCurveTo(-24, 2, -20, -14);
+      ctx.quadraticCurveTo(-16, -24, -6, -18);
+      ctx.quadraticCurveTo(-14, -14, -12, -4);
+      ctx.quadraticCurveTo(-12, 2, -6, 4);
+      ctx.closePath();
+      ctx.fill();
+      drawBeast(ctx, { body: "#ad7044", dark: "#7a4d2c", ear: "round", tail: "none", snout: 2 });
+      break;
+    }
+    case "hedgehog": {
+      ctx.fillStyle = "#d8c3a8";
+      ctx.beginPath();
+      ctx.ellipse(9, 4, 8, 6, 0, 0, Math.PI * 2); // face
+      ctx.fill();
+      ctx.fillStyle = "#a7896c";
+      ctx.beginPath();
+      ctx.arc(-1, 2, 12, Math.PI, 0); // quill dome
+      ctx.fill();
+      ctx.strokeStyle = "#6e5a44";
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i <= 10; i++) {
+        const a = Math.PI + (i / 10) * Math.PI;
+        ctx.beginPath();
+        ctx.moveTo(-1 + Math.cos(a) * 10, 2 + Math.sin(a) * 10);
+        ctx.lineTo(-1 + Math.cos(a) * 16, 2 + Math.sin(a) * 16);
+        ctx.stroke();
+      }
+      ctx.fillStyle = CC.dark;
+      ctx.beginPath();
+      ctx.arc(12, 2, 1.3, 0, Math.PI * 2); // eye
+      ctx.arc(17, 4, 1.6, 0, Math.PI * 2); // nose
+      ctx.fill();
+      ctx.strokeStyle = "#6e5a44";
+      ctx.lineWidth = 2.5;
+      for (const lx of [-3, 5]) {
+        ctx.beginPath();
+        ctx.moveTo(lx, 9);
+        ctx.lineTo(lx, 15);
+        ctx.stroke();
+      }
+      break;
+    }
+    case "goat": {
+      drawBeast(ctx, { body: "#d8d1bf", dark: "#a39a83", ear: "long", tail: "stub", snout: 4, horns: true, beard: true });
+      break;
+    }
+    case "porcupine": {
+      ctx.fillStyle = "#927961";
+      ctx.beginPath();
+      ctx.ellipse(6, 5, 10, 7, 0, 0, Math.PI * 2); // low body
+      ctx.fill();
+      ctx.strokeStyle = "#4b3d2f";
+      ctx.lineWidth = 1.8;
+      for (let i = 0; i <= 12; i++) {
+        const bx = -14 + i * 2.4;
+        ctx.beginPath();
+        ctx.moveTo(bx, 3);
+        ctx.lineTo(bx - 6, -10 - (i % 2) * 3);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#6e5a44";
+      ctx.beginPath();
+      ctx.arc(16, 4, 5, 0, Math.PI * 2); // snout
+      ctx.fill();
+      ctx.fillStyle = CC.dark;
+      ctx.beginPath();
+      ctx.arc(16, 2, 1.3, 0, Math.PI * 2);
+      ctx.arc(20, 4, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#4b3d2f";
+      ctx.lineWidth = 2.5;
+      for (const lx of [2, 12]) {
+        ctx.beginPath();
+        ctx.moveTo(lx, 11);
+        ctx.lineTo(lx, 16);
+        ctx.stroke();
+      }
+      break;
+    }
+    case "chameleon": {
+      ctx.strokeStyle = "#5aa85f";
+      ctx.lineWidth = 4;
+      ctx.lineCap = "round";
+      ctx.beginPath(); // curled tail
+      ctx.moveTo(-8, 2);
+      ctx.quadraticCurveTo(-20, 5, -18, -6);
+      ctx.quadraticCurveTo(-16, -13, -22, -12);
+      ctx.stroke();
+      for (const lx of [-4, 8]) {
+        ctx.beginPath();
+        ctx.moveTo(lx, 3);
+        ctx.lineTo(lx - 2, 12);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#72c878";
+      ctx.beginPath();
+      ctx.ellipse(-1, -2, 12, 7, 0.05, 0, Math.PI * 2); // body
+      ctx.fill();
+      ctx.beginPath(); // casque crest
+      ctx.moveTo(9, -6);
+      ctx.lineTo(20, -12);
+      ctx.lineTo(20, -2);
+      ctx.lineTo(13, 2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#4c8a50";
+      ctx.beginPath();
+      ctx.arc(15, -3, 3.6, 0, Math.PI * 2); // turret eye
+      ctx.fill();
+      ctx.fillStyle = CC.dark;
+      ctx.beginPath();
+      ctx.arc(16, -3, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#4c8a50";
+      ctx.lineWidth = 1.5;
+      for (const sx of [-6, -1, 4]) {
+        ctx.beginPath();
+        ctx.moveTo(sx, -8);
+        ctx.lineTo(sx + 2, 4);
+        ctx.stroke();
+      }
+      break;
+    }
+    case "owl": {
+      const ob = "#b68a62";
+      const od = "#7d5c3c";
+      ctx.fillStyle = ob;
+      ctx.beginPath();
+      ctx.ellipse(0, 3, 11, 14, 0, 0, Math.PI * 2); // body
+      ctx.fill();
+      ctx.fillStyle = od;
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.ellipse(s * 9, 4, 4, 12, s * 0.1, 0, Math.PI * 2); // folded wings
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(s * 5, -15);
+        ctx.lineTo(s * 8, -21);
+        ctx.lineTo(s * 8, -13);
+        ctx.closePath();
+        ctx.fill(); // ear tufts
+      }
+      ctx.fillStyle = "#d8c3a0";
+      ctx.beginPath();
+      ctx.arc(0, -8, 9, 0, Math.PI * 2); // face disc
+      ctx.fill();
+      ctx.fillStyle = "#fdfbf4";
+      ctx.beginPath();
+      ctx.arc(-4, -8, 3.4, 0, Math.PI * 2);
+      ctx.arc(4, -8, 3.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = CC.dark;
+      ctx.beginPath();
+      ctx.arc(-4, -8, 1.7, 0, Math.PI * 2);
+      ctx.arc(4, -8, 1.7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#e0a54a";
+      ctx.beginPath();
+      ctx.moveTo(0, -6);
+      ctx.lineTo(-2, -2);
+      ctx.lineTo(2, -2);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    case "bat": {
+      const bb = "#716b91";
+      const bd = "#443f5c";
+      const flap = Math.sin(t * 12) * 3;
+      ctx.fillStyle = bd;
+      for (const s of [-1, 1]) {
+        ctx.save();
+        ctx.scale(s, 1);
+        ctx.beginPath();
+        ctx.moveTo(2, 0);
+        ctx.quadraticCurveTo(12, -8 - flap, 21, -3 - flap);
+        ctx.quadraticCurveTo(16, 2, 19, 9);
+        ctx.quadraticCurveTo(12, 4, 9, 9);
+        ctx.quadraticCurveTo(7, 4, 2, 6);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.fillStyle = bb;
+      ctx.beginPath();
+      ctx.ellipse(0, 1, 4, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0, -6, 4, 0, Math.PI * 2);
+      ctx.fill();
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(s * 2, -9);
+        ctx.lineTo(s * 4, -13);
+        ctx.lineTo(s * 4, -7);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.fillStyle = "#ffe08a";
+      ctx.beginPath();
+      ctx.arc(-1.5, -6, 0.9, 0, Math.PI * 2);
+      ctx.arc(1.5, -6, 0.9, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    default: {
+      // Unknown id (e.g. a species added to the 3D roster but not here yet).
+      ctx.fillStyle = "#9aa0ad";
+      ctx.beginPath();
+      ctx.arc(0, 0, 9, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+  }
 }

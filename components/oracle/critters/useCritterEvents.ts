@@ -21,6 +21,13 @@ export interface ActiveCritter {
   reacting: boolean;
 }
 
+/** What `useCritterEvents` returns — shared by both renderers. */
+export interface CritterEvents {
+  active: ActiveCritter | null;
+  caption: string;
+  api: CritterApi;
+}
+
 const AMBIENT_MIN_MS = 60_000;
 const AMBIENT_MAX_MS = 150_000;
 /** Never fire an ambient critter this soon after an answer finishes. */
@@ -61,7 +68,7 @@ export function useCritterEvents({
   /** Stretch the ambient interval on weak devices and phones. */
   intervalScale: number;
   voiceOn: boolean;
-}): { active: ActiveCritter | null; caption: string; api: CritterApi } {
+}): CritterEvents {
   const [active, setActive] = useState<ActiveCritter | null>(null);
   const [caption, setCaption] = useState("");
 

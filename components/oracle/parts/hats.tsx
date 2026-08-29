@@ -79,56 +79,58 @@ export function Hat({ appearance, mats }: PartProps) {
         </group>
       );
     case "fedora":
+      // Brim rests just above the brow; crown rises a full head-height above it.
+      // The brim is a FLAT horizontal disc — a Y-axis cylinder needs no rotation.
       return (
-        <group position={[0, 0.02, 0]}>
-          <mesh material={mats.hatDark} rotation={[-Math.PI / 2, 0, 0]} scale={[1, 1, 0.34]}>
-            <cylinderGeometry args={[0.56, 0.56, 0.05, 20]} />
+        <group position={[0, -0.12, 0]}>
+          <mesh material={mats.hatDark} position={[0, 0.03, 0]} scale={[1, 1, 0.88]}>
+            <cylinderGeometry args={[0.6, 0.6, 0.06, 20]} />
           </mesh>
-          <mesh material={mats.hat} position={[0, 0.17, 0]}>
-            <cylinderGeometry args={[0.33, 0.37, 0.34, 14]} />
+          <mesh material={mats.hat} position={[0, 0.24, 0]}>
+            <cylinderGeometry args={[0.34, 0.4, 0.42, 14]} />
           </mesh>
           {/* pinched crown */}
-          <mesh material={mats.hatDark} position={[0, 0.33, 0]} scale={[0.34, 0.3, 1]}>
+          <mesh material={mats.hatDark} position={[0, 0.44, 0]} scale={[0.4, 0.32, 1]}>
             <sphereGeometry args={[0.34, 12, 8]} />
           </mesh>
-          <Band mats={mats} r={0.365} y={0.06} tube={0.045} />
-          <HatGem mats={mats} y={0.09} z={0.3} s={0.85} />
+          <Band mats={mats} r={0.4} y={0.09} tube={0.05} />
+          <HatGem mats={mats} y={0.13} z={0.33} s={0.85} />
         </group>
       );
     case "cork":
       // Sheet 05 draws this as a TOP HAT, not the corked bush hat in the prompt.
       return (
-        <group position={[0, 0.02, 0]}>
-          <mesh material={mats.hatDark} rotation={[-Math.PI / 2, 0, 0]} scale={[1, 1, 0.3]}>
-            <cylinderGeometry args={[0.52, 0.52, 0.05, 20]} />
+        <group position={[0, -0.11, 0]}>
+          <mesh material={mats.hatDark} position={[0, 0.03, 0]} scale={[1, 1, 0.92]}>
+            <cylinderGeometry args={[0.56, 0.56, 0.06, 20]} />
           </mesh>
-          <mesh material={mats.hat} position={[0, 0.31, 0]}>
-            <cylinderGeometry args={[0.36, 0.34, 0.6, 16]} />
+          <mesh material={mats.hat} position={[0, 0.4, 0]}>
+            <cylinderGeometry args={[0.37, 0.35, 0.7, 16]} />
           </mesh>
-          <Band mats={mats} r={0.355} y={0.07} tube={0.045} />
-          <HatGem mats={mats} y={0.14} z={0.3} s={0.85} />
+          <Band mats={mats} r={0.37} y={0.1} tube={0.05} />
+          <HatGem mats={mats} y={0.2} z={0.33} s={0.85} />
         </group>
       );
     case "cowboy":
       // Brim curls UP at the sides — an apex-down cone gives that lift.
       return (
-        <group position={[0, 0.02, 0]}>
+        <group position={[0, -0.11, 0]}>
           <mesh
             material={mats.hatDark}
-            position={[0, 0.04, 0]}
+            position={[0, 0.06, 0]}
             rotation={[Math.PI, 0, 0]}
-            scale={[1, 1, 0.75]}
+            scale={[1, 1, 0.78]}
           >
-            <coneGeometry args={[0.62, 0.19, 20, 1, true]} />
+            <coneGeometry args={[0.66, 0.22, 20, 1, true]} />
           </mesh>
-          <mesh material={mats.hat} position={[0, 0.19, 0]}>
-            <cylinderGeometry args={[0.33, 0.37, 0.36, 14]} />
+          <mesh material={mats.hat} position={[0, 0.26, 0]}>
+            <cylinderGeometry args={[0.34, 0.4, 0.44, 14]} />
           </mesh>
-          <mesh material={mats.hatDark} position={[0, 0.36, 0]} scale={[0.34, 0.28, 1]}>
+          <mesh material={mats.hatDark} position={[0, 0.47, 0]} scale={[0.38, 0.3, 1]}>
             <sphereGeometry args={[0.34, 12, 8]} />
           </mesh>
-          <Band mats={mats} r={0.365} y={0.07} tube={0.045} />
-          <HatGem mats={mats} y={0.11} z={0.3} s={0.85} />
+          <Band mats={mats} r={0.4} y={0.09} tube={0.05} />
+          <HatGem mats={mats} y={0.14} z={0.34} s={0.85} />
         </group>
       );
     case "none":

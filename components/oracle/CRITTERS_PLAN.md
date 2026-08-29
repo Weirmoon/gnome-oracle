@@ -15,8 +15,11 @@ question and is cancelled the instant the user asks one. This work slots in
 
 ### Decisions taken (flag if wrong)
 
-- **3D only.** The 2D `OracleCanvas` fallback ignores critters. (A cheap
-  emoji-sprite version is a later stretch.)
+- ~~**3D only.** The 2D `OracleCanvas` fallback ignores critters.~~
+  **Superseded:** critters now render in both renderers — full hand-drawn vector
+  art in `OracleCanvas.tsx` (`drawCritter`), with the ambient loop lifted to
+  `OracleAvatar.tsx` so one loop drives both. See
+  [`critters/ADDING_A_CRITTER.md`](critters/ADDING_A_CRITTER.md).
 - **Manual trigger = type `/fairy` (or `/dragon`, …) as the whole ask input** →
   intercepted in `ask()` before it hits `/api/ask`. Plus a "Summon" button row
   in Settings for showcasing.

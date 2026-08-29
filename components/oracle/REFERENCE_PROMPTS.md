@@ -220,6 +220,10 @@ Reference art for the **ambient critters** feature (`components/oracle/CRITTERS_
 small creatures that wander in, provoke a reaction, and leave. Generate the base
 gnome (sheet #1 above) first — the critters are sized and styled *against* him.
 
+> **Adding a new critter?** Follow `critters/ADDING_A_CRITTER.md` — it has the
+> per-species checklist and the current `assets/critter-reference-lowpoly/` `Cxx`
+> index (the `C1..C14` headings below are stale and do not match the filenames).
+
 Critters use a **different** master block: they are soft painted living things,
 the warm contrast to the faceted crystal gnome — never crystal themselves.
 

@@ -20,6 +20,7 @@ function Gallery() {
   const get = <T,>(k: string, def: T) => (q.get(k) as T | null) ?? def;
 
   const appearance: Appearance = {
+    variant: get("variant", undefined),
     hat: get("hat", "wizard"),
     hatColor: get("hatColor", "#3a2470"),
     robeColor: get("robeColor", "#5a3aa0"),

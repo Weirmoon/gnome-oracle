@@ -30,6 +30,7 @@ import { readGesture } from "./animation/gestures";
 import { flourishFor } from "./animation/flourish";
 import type { ParticlesHandle } from "./Particles";
 import type { CritterReaction } from "./critters/catalog";
+import { AvatarVariantBody } from "./parts/avatarVariants";
 
 export interface RigRefs {
   root: THREE.Group | null;
@@ -326,7 +327,10 @@ export default function GnomeModel({
       const aimY = critterPos ? critterPos[1] : 0.7;
       // Yaw toward the critter, clamped so he never turns his back.
       const yaw = Math.max(-0.9, Math.min(0.9, aimX * 0.6));
-      const pitch = Math.max(-0.5, Math.min(0.5, (aimY - 0.62) * -0.4));
+      // `guard` (the dragon) is a big critter that lands with its head near his:
+      // bias the aim upward so he cranes UP at it rather than down.
+      const pitchBias = critterReaction === "guard" ? -0.28 : 0;
+      const pitch = Math.max(-0.6, Math.min(0.5, (aimY - 0.62) * -0.4 + pitchBias));
 
       switch (critterReaction) {
         case "zap": {
@@ -495,6 +499,7 @@ export default function GnomeModel({
         ))}
 
         <Torso appearance={appearance} mats={mats} />
+        <AvatarVariantBody variant={appearance.variant} slot="body" />
         <Pattern appearance={appearance} mats={mats} />
         <Accessory appearance={appearance} mats={mats} />
 
@@ -529,6 +534,7 @@ export default function GnomeModel({
 
       <group ref={set("head")} position={[0, HEAD_Y, 0]}>
         <mesh geometry={headGeo} material={mats.skin} scale={[1.06, 1, 0.97]} />
+        <AvatarVariantBody variant={appearance.variant} slot="head" />
 
         {/* pointed ears — present on every view of sheet 01 */}
         <mesh

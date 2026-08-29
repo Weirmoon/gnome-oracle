@@ -111,6 +111,18 @@ export const CRITTER_PROMPTS: Record<CritterId, CritterPrompt> = {
       "One day you'll sneak up on someone with a weak heart.",
     ],
   },
+  wolf: { hint: "A watchful wolf has padded into view. React cautiously but respectfully. ONE short line.", fallbackLines: ["Easy, friend. We can share the moon.", "Those eyes have seen some things."] },
+  bobcat: { hint: "A bobcat is sizing you up. React with nervous respect. ONE short line.", fallbackLines: ["That is a lot of cat for one room.", "I am not prey. Probably."] },
+  fox: { hint: "A sly fox is circling nearby. React suspiciously. ONE short line.", fallbackLines: ["I know that look, fox.", "Nothing in my pockets is edible."] },
+  rabbit: { hint: "A rabbit has hopped up timidly. React gently. ONE short line.", fallbackLines: ["Hello, little hopper.", "No need to panic. I do enough of that."] },
+  raccoon: { hint: "A raccoon is rummaging nearby. React with weary amusement. ONE short line.", fallbackLines: ["Put that down, bandit.", "The pantry is not a suggestion box."] },
+  owl: { hint: "An owl is perched nearby, judging you. React softly. ONE short line.", fallbackLines: ["Yes, wise one. I am working on it.", "Do stop looking so correct."] },
+  bat: { hint: "A bat swoops around your hat. React startled. ONE short line.", fallbackLines: ["Mind the hat, night-friend.", "I prefer my surprises grounded."] },
+  squirrel: { hint: "A squirrel is hiding something nearby. React suspiciously. ONE short line.", fallbackLines: ["That is not your acorn.", "I saw that. I absolutely saw that."] },
+  hedgehog: { hint: "A hedgehog has curled up beside you. React fondly. ONE short line.", fallbackLines: ["Tiny armor. Excellent choice.", "Take your time, prickly friend."] },
+  goat: { hint: "A goat is chewing something important. React exasperated. ONE short line.", fallbackLines: ["That was a scroll.", "Please develop a less literary appetite."] },
+  porcupine: { hint: "A porcupine is bristling nearby. React carefully. ONE short line.", fallbackLines: ["I will admire you from here.", "No sudden hugs. Understood."] },
+  chameleon: { hint: "A chameleon is blending into the room. React delighted. ONE short line.", fallbackLines: ["Oh, there you are.", "Very subtle. Almost too subtle."] },
 };
 
 export function pickFallbackLine(id: CritterId): string {

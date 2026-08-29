@@ -11,7 +11,8 @@
 
 export type CritterId =
   | "fairy" | "dragon" | "deer" | "wisp" | "imp" | "raincloud"
-  | "moth" | "snail" | "crow" | "fireflies" | "gust" | "toad";
+  | "moth" | "snail" | "crow" | "fireflies" | "gust" | "toad"
+  | "wolf" | "bobcat" | "fox" | "rabbit" | "raccoon" | "owl" | "bat" | "squirrel" | "hedgehog" | "goat" | "porcupine" | "chameleon";
 
 export type CritterReaction =
   | "zap"      // turn, cast bolts at it, shoo — brows down, muttering
@@ -57,7 +58,7 @@ export const CRITTERS: Record<CritterId, Critter> = {
   },
   dragon: {
     id: "dragon", name: "Dragon", emoji: "🐉", reaction: "guard", path: "descend", side: "front",
-    durationMs: 10000, tint: "#ff6b4a", sfx: "rumble", weight: 6,
+    durationMs: 10000, tint: "#6fae55", sfx: "rumble", weight: 6,
   },
   crow: {
     id: "crow", name: "Crow", emoji: "🐦‍⬛", reaction: "grab-hat", path: "swoop", side: "top",
@@ -91,6 +92,18 @@ export const CRITTERS: Record<CritterId, Critter> = {
     id: "wisp", name: "Will-o'-wisp", emoji: "🔮", reaction: "startle", path: "drift", side: "right",
     durationMs: 8000, tint: "#8fe6e0", sfx: "sparkle", weight: 8,
   },
+  wolf: { id: "wolf", name: "Wolf", emoji: "🐺", reaction: "guard", path: "walk", side: "left", durationMs: 9500, tint: "#8f9aaa", sfx: "rumble", weight: 8 },
+  bobcat: { id: "bobcat", name: "Bobcat", emoji: "🐈", reaction: "startle", path: "burst", side: "right", durationMs: 8500, tint: "#c98b5b", sfx: "soft", weight: 7 },
+  fox: { id: "fox", name: "Fox", emoji: "🦊", reaction: "grab-hat", path: "swoop", side: "left", durationMs: 9000, tint: "#e47738", sfx: "caw", weight: 8 },
+  rabbit: { id: "rabbit", name: "Rabbit", emoji: "🐇", reaction: "startle", path: "burst", side: "right", durationMs: 8000, tint: "#e4d5c8", sfx: "soft", weight: 8 },
+  raccoon: { id: "raccoon", name: "Raccoon", emoji: "🦝", reaction: "swat", path: "walk", side: "front", durationMs: 9000, tint: "#87909a", sfx: "soft", weight: 7 },
+  owl: { id: "owl", name: "Owl", emoji: "🦉", reaction: "calm", path: "swoop", side: "top", durationMs: 9000, tint: "#b68a62", sfx: "caw", weight: 7 },
+  bat: { id: "bat", name: "Bat", emoji: "🦇", reaction: "startle", path: "flit", side: "top", durationMs: 8000, tint: "#716b91", sfx: "buzz", weight: 7 },
+  squirrel: { id: "squirrel", name: "Squirrel", emoji: "🐿️", reaction: "wait", path: "walk", side: "front", durationMs: 8500, tint: "#ad7044", sfx: "soft", weight: 7 },
+  hedgehog: { id: "hedgehog", name: "Hedgehog", emoji: "🦔", reaction: "guard", path: "walk", side: "front", durationMs: 9500, tint: "#a7896c", sfx: "soft", weight: 6 },
+  goat: { id: "goat", name: "Goat", emoji: "🐐", reaction: "calm", path: "walk", side: "right", durationMs: 9500, tint: "#d8d1bf", sfx: "soft", weight: 6 },
+  porcupine: { id: "porcupine", name: "Porcupine", emoji: "🦔", reaction: "guard", path: "walk", side: "left", durationMs: 9500, tint: "#927961", sfx: "rumble", weight: 6 },
+  chameleon: { id: "chameleon", name: "Chameleon", emoji: "🦎", reaction: "calm", path: "drift", side: "right", durationMs: 9000, tint: "#72c878", sfx: "soft", weight: 6 },
 };
 
 export const CRITTER_LIST: Critter[] = Object.values(CRITTERS);

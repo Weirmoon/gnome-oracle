@@ -2,6 +2,8 @@
 // here so this module is safe to import from client components too.
 
 export type HatStyle = "wizard" | "gnome" | "fedora" | "cork" | "cowboy" | "none";
+export type AvatarVariant = "gnome" | "werewolf" | "lady" | "goblin" | "ghost" | "stone-golem" | "young-apprentice";
+export const AVATAR_VARIANTS: AvatarVariant[] = ["gnome", "werewolf", "lady", "goblin", "ghost", "stone-golem", "young-apprentice"];
 export const HAT_STYLES: HatStyle[] = ["wizard", "gnome", "fedora", "cork", "cowboy", "none"];
 
 export type CostumeAccessory =
@@ -187,6 +189,7 @@ export type SfxTheme = "magic" | "corporate" | "nature" | "robot" | "whimsy";
 export const SFX_THEMES: SfxTheme[] = ["magic", "corporate", "nature", "robot", "whimsy"];
 
 export interface Appearance {
+  variant?: AvatarVariant;
   hat: HatStyle;
   hatColor: string;
   robeColor: string;
@@ -284,6 +287,9 @@ export function normalizeMeta(
   const hat = HAT_STYLES.includes(a.hat as HatStyle)
     ? (a.hat as HatStyle)
     : fallback.appearance.hat;
+  const variant = AVATAR_VARIANTS.includes(a.variant as AvatarVariant)
+    ? (a.variant as AvatarVariant)
+    : (fallback.appearance.variant ?? "gnome");
 
   const color = (val: unknown, def: string) =>
     typeof val === "string" && /^#[0-9a-fA-F]{3,8}$/.test(val) ? val : def;
@@ -306,6 +312,7 @@ export function normalizeMeta(
   const pattern = enumValue(a.pattern, COSTUME_PATTERNS, fallback.appearance.pattern);
 
   const appearance = {
+    variant,
     hat,
     hatColor: color(a.hatColor, fallback.appearance.hatColor),
     robeColor: color(a.robeColor, fallback.appearance.robeColor),
@@ -350,6 +357,9 @@ function normalizeVariants(rawVariants: unknown[], first: Appearance, fallback: 
     const o = raw as Record<string, unknown>;
     const base = variants.length < fallback.length ? fallback[variants.length] : first;
     const hat = HAT_STYLES.includes(o.hat as HatStyle) ? (o.hat as HatStyle) : base.hat;
+    const variant = AVATAR_VARIANTS.includes(o.variant as AvatarVariant)
+      ? (o.variant as AvatarVariant)
+      : (base.variant ?? "gnome");
     const accessory = COSTUME_ACCESSORIES.includes(o.accessory as CostumeAccessory)
       ? (o.accessory as CostumeAccessory)
       : base.accessory;
@@ -362,6 +372,7 @@ function normalizeVariants(rawVariants: unknown[], first: Appearance, fallback: 
     const color = (val: unknown, def: string) =>
       typeof val === "string" && /^#[0-9a-fA-F]{3,8}$/.test(val) ? val : def;
     variants.push({
+      variant,
       hat,
       hatColor: color(o.hatColor, base.hatColor),
       robeColor: color(o.robeColor, base.robeColor),

@@ -1,11 +1,17 @@
 "use client";
 
-import { Component, Suspense, type ReactNode, type Ref } from "react";
+import {
+  Component,
+  Suspense,
+  useImperativeHandle,
+  type ReactNode,
+  type Ref,
+} from "react";
 import dynamic from "next/dynamic";
 import OracleCanvas from "@/components/OracleCanvas";
 import type { Appearance } from "@/lib/persona";
 import { useAvatarCapability } from "./useAvatarCapability";
-import type { CritterApi } from "./critters/useCritterEvents";
+import { useCritterEvents, type CritterApi } from "./critters/useCritterEvents";
 
 /**
  * Public avatar component. Owns the choice between the 2D `<OracleCanvas>`
@@ -17,6 +23,9 @@ import type { CritterApi } from "./critters/useCritterEvents";
  * every new prop is optional so the 2D path can ignore what it can't express.
  * `three` / `@react-three/fiber` live only in the lazily-imported
  * `OracleAvatar3D` chunk, so the initial page load never pays for them.
+ *
+ * The ambient-critter loop lives HERE, not in `OracleAvatar3D`, so both
+ * renderers share one loop and one `summon` — critters now perform in 2D too.
  */
 
 export type OracleQuality = "auto" | "high" | "low" | "2d";
@@ -43,7 +52,7 @@ export interface OracleAvatarProps {
   /** Rendering preference from settings. Default "auto". */
   quality?: OracleQuality;
 
-  // --- ambient critters (3D only; the 2D fallback ignores all of this) ---
+  // --- ambient critters (both renderers) ---
   /** Ambient critter loop on. Manual `summon` still works when false. */
   crittersEnabled?: boolean;
   /** Populated with the critter controls so `page.tsx` can summon by slash command. */
@@ -57,24 +66,87 @@ export interface OracleAvatarProps {
 
 const OracleAvatar3D = dynamic(() => import("./OracleAvatar3D"), { ssr: false });
 
+const LOW_TIER_INTERVAL_SCALE = 1.8;
+const MOBILE_INTERVAL_SCALE = 1.6;
+
+function isCoarsePointer(): boolean {
+  return typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
+}
+
 export default function OracleAvatar(props: OracleAvatarProps) {
   const { speaking, appearance, burst = 0, quality = "auto" } = props;
   const cap = useAvatarCapability(quality);
+  const reduced = cap.tier === "low" || !!props.reducedMotion;
+
+  const critters = useCritterEvents({
+    enabled: props.crittersEnabled ?? false,
+    isIdle: !props.streaming && !speaking,
+    streaming: !!props.streaming,
+    characterId: props.characterId,
+    mood: props.mood,
+    reduced,
+    ambientOff: !!props.reducedMotion,
+    // Weak devices and phones get the same roster, just further apart.
+    intervalScale:
+      (cap.tier === "low" ? LOW_TIER_INTERVAL_SCALE : 1) *
+      (isCoarsePointer() ? MOBILE_INTERVAL_SCALE : 1),
+    voiceOn: !!props.voiceOn,
+  });
+
+  useImperativeHandle(props.critterApiRef, () => critters.api, [critters.api]);
+
+  const active = critters.active;
+  const caption = critters.caption ? (
+    <p className="critter-quip">
+      <span aria-hidden="true">{active?.critter.emoji}</span> {critters.caption}
+    </p>
+  ) : null;
 
   const fallback2d = (
-    <OracleCanvas speaking={speaking} appearance={appearance} burst={burst} />
+    <OracleCanvas
+      speaking={speaking}
+      appearance={appearance}
+      burst={burst}
+      critter={
+        active
+          ? {
+              id: active.critter.id,
+              reaction: active.critter.reaction,
+              side: active.critter.side,
+              startedAt: active.startedAt,
+              durationMs: active.critter.durationMs,
+              reacting: active.reacting,
+            }
+          : null
+      }
+      reducedMotion={reduced}
+    />
   );
 
-  if (!cap.ready || cap.mode === "2d") return fallback2d;
-
-  const thinking = props.thinking ?? (!!props.streaming && !props.answerText);
+  let renderer: ReactNode;
+  if (!cap.ready || cap.mode === "2d") {
+    renderer = fallback2d;
+  } else {
+    const thinking = props.thinking ?? (!!props.streaming && !props.answerText);
+    renderer = (
+      <ThreeErrorBoundary fallback={fallback2d}>
+        <Suspense fallback={fallback2d}>
+          <OracleAvatar3D
+            {...props}
+            thinking={thinking}
+            tier={cap.tier}
+            critters={critters}
+          />
+        </Suspense>
+      </ThreeErrorBoundary>
+    );
+  }
 
   return (
-    <ThreeErrorBoundary fallback={fallback2d}>
-      <Suspense fallback={fallback2d}>
-        <OracleAvatar3D {...props} thinking={thinking} tier={cap.tier} />
-      </Suspense>
-    </ThreeErrorBoundary>
+    <div className="oraclewrap">
+      {renderer}
+      {caption}
+    </div>
   );
 }
 

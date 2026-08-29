@@ -21,7 +21,9 @@ const HOLD: Record<CritterPath, [number, number, number]> = {
   walk: [1.02, -0.95, 0.6],
   drift: [0.95, 0.8, 0.5],
   burst: [1.05, -0.28, 0.6],
-  descend: [1.0, -0.72, 0.5],
+  // Raised and pushed forward so the (now much larger) dragon lands in front of
+  // the gnome with its head near his — he reads as looking UP at it, not down.
+  descend: [0.9, -0.22, 0.95],
 };
 
 const ease = (k: number) => 1 - Math.pow(1 - k, 3);

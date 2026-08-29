@@ -5,7 +5,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { OracleAvatar } from "@/components/oracle";
 import type { CritterApi } from "@/components/oracle/critters/useCritterEvents";
-import type { PersonaMeta } from "@/lib/persona";
+import type { PersonaMeta, AvatarVariant } from "@/lib/persona";
+import { AVATAR_VARIANTS } from "@/lib/persona";
 import { tts } from "@/lib/tts";
 import { sound } from "@/lib/sound";
 
@@ -73,6 +74,8 @@ export default function Home() {
   const [historyId, setHistoryId] = useState<number | null>(null);
   const [favorited, setFavorited] = useState(false);
   const [outfitIndex, setOutfitIndex] = useState(0);
+  /** "" = use whatever the persona specifies; otherwise force this body. */
+  const [variantOverride, setVariantOverride] = useState<"" | AvatarVariant>("");
   const [responseStyle, setResponseStyle] = useState<ResponseStyle>("funny-useful");
   const [mood, setMood] = useState("default");
   const [streamDone, setStreamDone] = useState(0);
@@ -90,7 +93,10 @@ export default function Home() {
     : selected
       ? [selected.meta.appearance]
       : [];
-  const selectedAppearance = outfits[outfitIndex] ?? selected?.meta.appearance;
+  const baseAppearance = outfits[outfitIndex] ?? selected?.meta.appearance;
+  const selectedAppearance = baseAppearance
+    ? { ...baseAppearance, variant: variantOverride || baseAppearance.variant || "gnome" }
+    : baseAppearance;
   const moods = selected?.meta.moods?.length ? selected.meta.moods : ["default"];
   const avatarQualityProp =
     avatarPref === "auto" ? "auto" : avatarPref === "2d" ? "2d" : avatarQuality;
@@ -133,6 +139,10 @@ export default function Home() {
     if (isResponseStyle(storedStyle)) setResponseStyle(storedStyle);
     if (storedMood) setMood(storedMood);
     if (Number.isFinite(storedOutfit)) setOutfitIndex(Math.max(0, Math.min(3, storedOutfit)));
+    const storedVariant = localStorage.getItem("gnome.variant");
+    if (storedVariant && (AVATAR_VARIANTS as string[]).includes(storedVariant)) {
+      setVariantOverride(storedVariant as AvatarVariant);
+    }
     if (storedAvatar === "auto" || storedAvatar === "3d" || storedAvatar === "2d") {
       setAvatarPref(storedAvatar);
     }
@@ -194,6 +204,14 @@ export default function Home() {
         : (outfitIndex + 1 + Math.floor(Math.random() * (outfits.length - 1))) %
           outfits.length;
     changeOutfit(next);
+  }
+
+  function changeVariant(value: string) {
+    const v = ((AVATAR_VARIANTS as string[]).includes(value) ? value : "") as "" | AvatarVariant;
+    setVariantOverride(v);
+    localStorage.setItem("gnome.variant", v);
+    setBurst((b) => b + 1);
+    sound.switchBell();
   }
 
   function changeResponseStyle(value: ResponseStyle) {
@@ -378,14 +396,14 @@ export default function Home() {
               </select>
             </div>
           )}
-          {avatarPref !== "2d" && (
-            <SummonRow
-              crittersOn={crittersOn}
-              reducedMotion={reducedMotion}
-              onToggle={toggleCritters}
-              api={critterApi}
-            />
-          )}
+          {/* Critters now perform in the 2D renderer too, so this row is
+              always shown. */}
+          <SummonRow
+            crittersOn={crittersOn}
+            reducedMotion={reducedMotion}
+            onToggle={toggleCritters}
+            api={critterApi}
+          />
           <div className="soundrow">
             <button className="iconbtn" onClick={toggleVoice}>
               {voiceOn ? "🔊" : "🔇"}
@@ -515,6 +533,18 @@ export default function Home() {
                 🎲
               </button>
             </div>
+          </label>
+
+          <label className="field">
+            Body
+            <select value={variantOverride} onChange={(e) => changeVariant(e.target.value)}>
+              <option value="">Default</option>
+              {AVATAR_VARIANTS.filter((v) => v !== "gnome").map((v) => (
+                <option key={v} value={v}>
+                  {labelize(v)}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label className="field">

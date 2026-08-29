@@ -91,8 +91,14 @@ canvas.oracle,
   filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.45));
 }
 
-/* The stage is a fixed 280px box, so the critter caption overlays it rather
-   than adding height and shifting the bubble below. */
+/* Fixed 280px box shared by both renderers, so the critter caption overlays it
+   rather than adding height and shifting the bubble below. */
+.oraclewrap {
+  position: relative;
+  width: 280px;
+  height: 280px;
+}
+
 .oracle3d {
   position: relative;
 }

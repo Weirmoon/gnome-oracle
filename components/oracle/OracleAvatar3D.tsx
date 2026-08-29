@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import * as THREE from "three";
 import type { Appearance } from "@/lib/persona";
@@ -12,14 +12,7 @@ import { useOraclePhase } from "./animation/useOraclePhase";
 import { noteAnswerText, noteSpeakingStart } from "./animation/lipSync";
 import { feedGestureText, resetGestures } from "./animation/gestures";
 import CritterStage from "./critters/CritterStage";
-import { useCritterEvents } from "./critters/useCritterEvents";
-
-const LOW_TIER_INTERVAL_SCALE = 1.8;
-const MOBILE_INTERVAL_SCALE = 1.6;
-
-function isCoarsePointer(): boolean {
-  return typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
-}
+import type { CritterEvents } from "./critters/useCritterEvents";
 
 const DEFAULT_APPEARANCE: Appearance = {
   hat: "wizard",
@@ -30,7 +23,7 @@ const DEFAULT_APPEARANCE: Appearance = {
   accent: "#ffd66b",
 };
 
-type Props = OracleAvatarProps & { tier: AvatarTier };
+type Props = OracleAvatarProps & { tier: AvatarTier; critters: CritterEvents };
 
 /**
  * Procedural 3D oracle — a faceted "crystal / gemstone" gnome, re-skinned per
@@ -55,20 +48,9 @@ export default function OracleAvatar3D(props: Props) {
   // spell bolts track it without driving a React render per frame.
   const critterPos = useRef<[number, number, number]>([1.2, 0.8, 0.4]);
 
-  const critters = useCritterEvents({
-    enabled: props.crittersEnabled ?? false,
-    isIdle: !props.streaming && !speaking,
-    streaming: !!props.streaming,
-    characterId: props.characterId,
-    mood: props.mood,
-    reduced: tier === "low" || !!props.reducedMotion,
-    ambientOff: !!props.reducedMotion,
-    // Weak devices and phones get the same roster, just further apart.
-    intervalScale: (tier === "low" ? LOW_TIER_INTERVAL_SCALE : 1) * (isCoarsePointer() ? MOBILE_INTERVAL_SCALE : 1),
-    voiceOn: !!props.voiceOn,
-  });
-
-  useImperativeHandle(props.critterApiRef, () => critters.api, [critters.api]);
+  // The ambient loop + `summon` are owned by `OracleAvatar` so both renderers
+  // share one loop; this component just consumes the active critter.
+  const critters = props.critters;
 
   const phase = useOraclePhase({
     streaming: props.streaming,
@@ -151,11 +133,6 @@ export default function OracleAvatar3D(props: Props) {
         <Particles ref={particlesRef} />
         <GroundShadow tier={tier} />
       </Canvas>
-      {critters.caption && (
-        <p className="critter-quip">
-          <span aria-hidden="true">{critters.active?.critter.emoji}</span> {critters.caption}
-        </p>
-      )}
     </div>
   );
 }

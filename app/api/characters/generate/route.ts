@@ -12,6 +12,7 @@ import {
   BACK_ITEMS,
   HELD_ITEMS,
   COSTUME_PATTERNS,
+  AVATAR_VARIANTS,
 } from "@/lib/persona";
 
 export const runtime = "nodejs";
@@ -34,7 +35,7 @@ function buildPrompt(vibe: string): string {
     '  "appearance": { "hat": one of ' +
     JSON.stringify(HAT_STYLES) +
     ', "hatColor": hex color, "robeColor": hex color, "beardColor": hex color, ' +
-    '"skin": hex color, "accent": hex color (used for glow/sparkles), "accessory": one of ' +
+    '"skin": hex color, "accent": hex color (used for glow/sparkles), "variant": one of ' + JSON.stringify(AVATAR_VARIANTS) + ', "accessory": one of ' +
     JSON.stringify(COSTUME_ACCESSORIES) +
     ', "hair": one of ' +
     JSON.stringify(HAIR_STYLES) +
