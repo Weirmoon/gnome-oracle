@@ -363,16 +363,16 @@ export default function GnomeModel({
           <mesh geometry={armGeo} material={mats.robe} position={[0, -0.22, 0]} />
           <mesh geometry={cuffGeo} material={mats.accent} position={[0, -0.44, 0]} />
           <mesh geometry={handGeo} material={mats.skin} position={[0, -0.55, 0]} scale={[1, 0.92, 0.9]} />
-          <group position={[0, -0.6, 0.06]}>
-            {heldHand === "L" && <HeldItem appearance={appearance} mats={mats} />}
+          <group position={[0, -0.6, 0.06]} rotation={[0, 0, -ARM_L_REST]}>
+            {heldHand === "L" && <HeldItem appearance={appearance} mats={mats} side={-1} />}
           </group>
         </group>
         <group ref={set("armR")} position={[0.46, -0.02, 0.16]} rotation={[0, 0, ARM_R_REST]}>
           <mesh geometry={armGeo} material={mats.robe} position={[0, -0.22, 0]} />
           <mesh geometry={cuffGeo} material={mats.accent} position={[0, -0.44, 0]} />
           <mesh geometry={handGeo} material={mats.skin} position={[0, -0.55, 0]} scale={[1, 0.92, 0.9]} />
-          <group ref={set("handR")} position={[0, -0.6, 0.06]}>
-            {heldHand === "R" && <HeldItem appearance={appearance} mats={mats} />}
+          <group ref={set("handR")} position={[0, -0.6, 0.06]} rotation={[0, 0, -ARM_R_REST]}>
+            {heldHand === "R" && <HeldItem appearance={appearance} mats={mats} side={1} />}
             {staff && (
               <group position={[0.1, 0.24, 0.04]} rotation={[0, 0, -ARM_R_REST]}>
                 <mesh geometry={staffGeo} material={mats.wood} />

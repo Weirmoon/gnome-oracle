@@ -13,8 +13,23 @@ const RED = solid("#ff4f5e", { emissive: "#ff4f5e", emissiveIntensity: 0.4 });
 const BRASS = solid("#b8863b", { metalness: 0.5, roughness: 0.4 });
 const PAPER = solid("#fffdf5", { roughness: 0.7 });
 
-/** HeldItem -> prop held in a hand group (origin = hand). */
-export function HeldItem({ appearance, mats }: PartProps) {
+/**
+ * HeldItem -> prop held in a hand group (origin = hand).
+ *
+ * The wrapper below matters: each prop is modelled extending up its own +Y
+ * from a handle at the origin. Mounted raw on the hand that points the prop
+ * back up inside the sleeve, which is why they were invisible. The wrapper
+ * drops and scales them so the mass sits in front of the fist.
+ */
+export function HeldItem({ side = 1, ...props }: PartProps & { side?: 1 | -1 }) {
+  return (
+    <group position={[side * 0.16, -0.16, 0.2]} scale={1.5}>
+      <HeldItemMesh {...props} />
+    </group>
+  );
+}
+
+function HeldItemMesh({ appearance, mats }: PartProps) {
   switch (appearance.heldItem) {
     case "portal-gun":
       return (
@@ -62,12 +77,14 @@ export function HeldItem({ appearance, mats }: PartProps) {
       );
     case "telescope":
       return (
-        <mesh material={DARK} rotation={[0, 0, -0.5]} position={[0.05, 0.16, 0]}>
-          <cylinderGeometry args={[0.05, 0.07, 0.42, 8]} />
+        <group rotation={[0, 0, -0.5]} position={[0.05, 0.1, 0]}>
+          <mesh material={DARK}>
+            <cylinderGeometry args={[0.05, 0.07, 0.42, 8]} />
+          </mesh>
           <mesh material={mats.accent} position={[0, 0.22, 0]}>
             <cylinderGeometry args={[0.06, 0.06, 0.08, 8]} />
           </mesh>
-        </mesh>
+        </group>
       );
     case "red-flashlight":
       return (

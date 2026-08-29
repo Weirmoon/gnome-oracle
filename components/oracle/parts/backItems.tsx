@@ -19,7 +19,15 @@ function wantsCape(p: PartProps["appearance"]): boolean {
   return p.accessory === "cape" || p.backItem === "star-cape";
 }
 
-/** BackItem -> gear worn on the back (backSlot group, sits behind the torso). */
+/**
+ * BackItem -> gear worn on the back (backSlot group, sits behind the torso).
+ *
+ * The stage only ever shows the gnome from the front, so anything that stays
+ * strictly behind the torso is invisible in play no matter how good it looks
+ * on the reference sheet's 3/4 rear view. Every item here is therefore sized
+ * or placed to break the body silhouette — wider than the robe, above the
+ * shoulders, or curling out to one side.
+ */
 export function BackItem({ appearance, mats }: PartProps) {
   const cape = wantsCape(appearance) ? (
     <Cape color={appearance.robeColor} starOnBack={appearance.backItem === "star-cape"} mats={mats} />
@@ -29,12 +37,12 @@ export function BackItem({ appearance, mats }: PartProps) {
   switch (appearance.backItem) {
     case "turtle-shell":
       item = (
-        <group position={[0, -0.1, -0.1]}>
-          <mesh material={SHELL} scale={[0.9, 1.1, 0.6]}>
+        <group position={[0, -0.16, -0.06]}>
+          <mesh material={SHELL} scale={[1.42, 1.25, 0.62]}>
             <icosahedronGeometry args={[0.5, 1]} />
           </mesh>
-          <mesh material={SHELL_RIM} rotation={[Math.PI / 2, 0, 0]}>
-            <torusGeometry args={[0.42, 0.04, 6, 6]} />
+          <mesh material={SHELL_RIM} rotation={[Math.PI / 2, 0, 0]} scale={[1.42, 1.42, 1]}>
+            <torusGeometry args={[0.44, 0.045, 6, 10]} />
           </mesh>
         </group>
       );
@@ -42,13 +50,13 @@ export function BackItem({ appearance, mats }: PartProps) {
     case "twin-swords":
       item = (
         <group>
-          {[-0.45, 0.45].map((r, i) => (
-            <group key={i} rotation={[0, 0, r]}>
-              <mesh material={STEEL} position={[0, 0.35, -0.05]}>
-                <boxGeometry args={[0.05, 0.8, 0.02]} />
+          {[-0.5, 0.5].map((r, i) => (
+            <group key={i} position={[0, 0.24, -0.02]} rotation={[0, 0, r]}>
+              <mesh material={STEEL} position={[0, 0.5, -0.05]}>
+                <boxGeometry args={[0.07, 1.1, 0.03]} />
               </mesh>
-              <mesh material={CANVAS} position={[0, -0.05, -0.05]}>
-                <boxGeometry args={[0.22, 0.05, 0.05]} />
+              <mesh material={CANVAS} position={[0, 0.02, -0.05]}>
+                <boxGeometry args={[0.28, 0.07, 0.07]} />
               </mesh>
             </group>
           ))}
@@ -57,9 +65,9 @@ export function BackItem({ appearance, mats }: PartProps) {
       break;
     case "dino-tail":
       item = (
-        <group position={[0, -0.7, 0.1]} rotation={[0.5, 0, 0]}>
+        <group position={[0.5, -0.5, 0.02]} rotation={[0.35, 0, -1.15]}>
           <mesh material={mats.robeDark}>
-            <coneGeometry args={[0.18, 0.9, 6]} />
+            <coneGeometry args={[0.2, 1.05, 7]} />
           </mesh>
           {[0.1, -0.05, -0.2].map((y, i) => (
             <mesh key={i} material={mats.accent} position={[0, y, 0.12]} rotation={[0.4, 0, 0]}>
@@ -71,22 +79,30 @@ export function BackItem({ appearance, mats }: PartProps) {
       break;
     case "weather-vane":
       item = (
-        <group position={[0.3, 0.2, -0.1]}>
+        <group position={[0.46, 0.62, -0.06]}>
           <mesh material={STEEL}>
-            <cylinderGeometry args={[0.02, 0.02, 1.4, 6]} />
+            <cylinderGeometry args={[0.025, 0.025, 1.9, 6]} />
           </mesh>
-          <mesh material={mats.accent} position={[0, 0.5, 0]} rotation={[0, 0, -Math.PI / 2]}>
-            <coneGeometry args={[0.08, 0.2, 4]} />
+          <mesh material={mats.accent} position={[0, 0.72, 0]} rotation={[0, 0, -Math.PI / 2]}>
+            <coneGeometry args={[0.1, 0.26, 4]} />
           </mesh>
-          <Star r={0.08} material={mats.accent} position={[0, 0.75, 0]} />
+          <Star r={0.1} material={mats.accent} position={[0, 0.98, 0]} />
         </group>
       );
       break;
     case "backpack":
       item = (
-        <mesh material={mats.robeDark} position={[0, -0.1, -0.12]}>
-          <boxGeometry args={[0.55, 0.7, 0.28]} />
-        </mesh>
+        <group>
+          <mesh material={mats.robeDark} position={[0, -0.12, -0.1]}>
+            <boxGeometry args={[1.0, 0.86, 0.3]} />
+          </mesh>
+          {/* shoulder straps, so it reads from the front too */}
+          {[-0.26, 0.26].map((x) => (
+            <mesh key={x} material={CANVAS} position={[x, 0.14, 0.72]} rotation={[0.2, 0, 0]}>
+              <boxGeometry args={[0.12, 0.72, 0.07]} />
+            </mesh>
+          ))}
+        </group>
       );
       break;
     default:
@@ -123,9 +139,9 @@ function Cape({
   );
   useEffect(() => () => mat.dispose(), [mat]);
   return (
-    <group position={[0, 0.1, -0.05]}>
+    <group position={[0, 0.16, -0.04]}>
       <mesh material={mat} position={[0, -0.4, 0]}>
-        <coneGeometry args={[0.6, 1.4, 6, 1, true]} />
+        <coneGeometry args={[0.86, 1.5, 9, 1, true]} />
       </mesh>
       {starOnBack && <Star r={0.12} material={mats.accent} position={[0, -0.3, -0.1]} rotation={[0, Math.PI, 0]} />}
     </group>

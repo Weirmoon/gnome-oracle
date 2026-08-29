@@ -2,6 +2,7 @@
 
 import * as THREE from "three";
 import { Star } from "./primitives";
+import { HEAD_Y, frontZ, headZ } from "./body";
 import type { PartProps } from "./types";
 
 const solid = (color: string, opts: Partial<THREE.MeshStandardMaterialParameters> = {}) =>
@@ -18,9 +19,11 @@ const INK = solid("#101116", { roughness: 0.4 });
 const GADGET = solid("#20242c");
 
 // Anchors relative to the torso group origin (torso ~[-0.9..0.3] in y).
-const FACE: [number, number, number] = [0, 0.67, 0.37];
-const CHEST: [number, number, number] = [0, -0.1, 0.34];
-const HAND_L: [number, number, number] = [-0.42, -0.32, 0.34];
+// These are computed against the real surfaces: the flat z values they used to
+// carry put face props inside the skull and chest props inside the robe.
+const FACE: [number, number, number] = [0, HEAD_Y + 0.07, headZ(0.07, 0.17) + 0.06];
+const CHEST: [number, number, number] = [0, -0.1, frontZ(-0.1, 0.16)];
+const HAND_L: [number, number, number] = [-0.52, -0.42, 0.4];
 
 /**
  * CostumeAccessory -> body-worn or hand-held extra. `cape` is intentionally a
@@ -54,11 +57,11 @@ export function Accessory({ appearance, mats }: PartProps) {
     case "martial-belt":
       return (
         <group position={[0, -0.4, 0]}>
-          <mesh material={DARK}>
-            <boxGeometry args={[0.75, 0.1, 0.55]} />
+          <mesh material={DARK} rotation={[-Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[0.47, 0.055, 6, 22]} />
           </mesh>
-          <mesh material={mats.accent} position={[0, 0, 0.3]}>
-            <boxGeometry args={[0.14, 0.14, 0.05]} />
+          <mesh material={mats.accent} position={[0, 0, frontZ(-0.4, 0.09)]}>
+            <boxGeometry args={[0.17, 0.17, 0.05]} />
           </mesh>
         </group>
       );
@@ -80,8 +83,8 @@ export function Accessory({ appearance, mats }: PartProps) {
       );
     case "mask":
       return (
-        <mesh material={INK} position={[0, 0.7, 0.35]}>
-          <boxGeometry args={[0.5, 0.24, 0.06]} />
+        <mesh material={INK} position={[0, HEAD_Y, 0]} scale={[1.1, 1, 1.02]}>
+          <sphereGeometry args={[0.5, 14, 10, 0, Math.PI * 2, Math.PI * 0.34, Math.PI * 0.2]} />
         </mesh>
       );
     case "sword":

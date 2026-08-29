@@ -74,8 +74,8 @@ export function FaceFeature({ appearance, mats }: PartProps) {
       );
     case "mask":
       return (
-        <mesh material={DARK} position={[0, EYE_Y + 0.01, headZ(EYE_Y) - 0.05]} scale={[1, 1, 0.9]}>
-          <sphereGeometry args={[0.47, 14, 10, 0, Math.PI * 2, Math.PI * 0.34, Math.PI * 0.2]} />
+        <mesh material={DARK} position={[0, 0, 0]} scale={[1.1, 1, 1.02]}>
+          <sphereGeometry args={[0.5, 14, 10, 0, Math.PI * 2, Math.PI * 0.34, Math.PI * 0.2]} />
         </mesh>
       );
     case "beard-stache":
