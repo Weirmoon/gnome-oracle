@@ -23,7 +23,7 @@ const PAPER = solid("#fffdf5", { roughness: 0.7 });
  */
 export function HeldItem({ side = 1, ...props }: PartProps & { side?: 1 | -1 }) {
   return (
-    <group position={[side * 0.16, -0.16, 0.2]} scale={1.5}>
+    <group position={[side * 0.14, -0.16, 0.2]} scale={1.25}>
       <HeldItemMesh {...props} />
     </group>
   );

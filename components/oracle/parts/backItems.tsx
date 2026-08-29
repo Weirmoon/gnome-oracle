@@ -140,8 +140,8 @@ function Cape({
   useEffect(() => () => mat.dispose(), [mat]);
   return (
     <group position={[0, 0.16, -0.04]}>
-      <mesh material={mat} position={[0, -0.4, 0]}>
-        <coneGeometry args={[0.86, 1.5, 9, 1, true]} />
+      <mesh material={mat} position={[0, -0.3, 0]}>
+        <coneGeometry args={[0.74, 1.24, 9, 1, true]} />
       </mesh>
       {starOnBack && <Star r={0.12} material={mats.accent} position={[0, -0.3, -0.1]} rotation={[0, Math.PI, 0]} />}
     </group>
