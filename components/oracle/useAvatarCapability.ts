@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { OracleQuality } from "./OracleAvatar";
 
-export type AvatarMode = "2d" | "3d";
+export type AvatarMode = "2d" | "3d" | "sprite";
 export type AvatarTier = "high" | "low";
 
 export interface AvatarCapability {
@@ -54,6 +54,7 @@ export function useAvatarCapability(quality: OracleQuality = "auto"): AvatarCapa
   useEffect(() => {
     function evaluate(): AvatarCapability {
       if (quality === "2d") return { mode: "2d", tier: "low", ready: true };
+      if (quality === "sprite") return { mode: "sprite", tier: "low", ready: true };
 
       const webgl = hasWebGL();
       if (!webgl) return { mode: "2d", tier: "low", ready: true };

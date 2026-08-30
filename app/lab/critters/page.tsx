@@ -44,6 +44,7 @@ function SpriteCell({ id }: { id: CritterId }) {
 function Gallery() {
   const q = useSearchParams();
   const mode = q.get("d") === "3" ? "3d" : q.get("sprite") != null ? "sprite" : "scene";
+  const critterRender = q.get("sprite2") != null ? "sprite" : "draw";
   const only = q.get("only");
   const list = only ? CRITTER_LIST.filter((c) => only.split(",").includes(c.id)) : CRITTER_LIST;
   const now = typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -81,6 +82,7 @@ function Gallery() {
             <div className="panel stage" style={{ width: 240, height: 240 }}>
               <OracleCanvas
                 speaking={false}
+                critterRender={critterRender}
                 critter={{
                   id: c.id,
                   reaction: c.reaction,

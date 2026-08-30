@@ -28,7 +28,7 @@ import { useCritterEvents, type CritterApi } from "./critters/useCritterEvents";
  * renderers share one loop and one `summon` — critters now perform in 2D too.
  */
 
-export type OracleQuality = "auto" | "high" | "low" | "2d";
+export type OracleQuality = "auto" | "high" | "low" | "2d" | "sprite";
 
 export interface OracleAvatarProps {
   /** TTS or stream is producing output — drives mouth + orb pulse. */
@@ -107,6 +107,7 @@ export default function OracleAvatar(props: OracleAvatarProps) {
       speaking={speaking}
       appearance={appearance}
       burst={burst}
+      critterRender={cap.mode === "sprite" ? "sprite" : "draw"}
       critter={
         active
           ? {
@@ -124,7 +125,7 @@ export default function OracleAvatar(props: OracleAvatarProps) {
   );
 
   let renderer: ReactNode;
-  if (!cap.ready || cap.mode === "2d") {
+  if (!cap.ready || cap.mode === "2d" || cap.mode === "sprite") {
     renderer = fallback2d;
   } else {
     const thinking = props.thinking ?? (!!props.streaming && !props.answerText);

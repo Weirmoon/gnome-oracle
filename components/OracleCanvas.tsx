@@ -7,6 +7,7 @@ import type {
   CritterReaction,
   CritterSide,
 } from "@/components/oracle/critters/catalog";
+import { CRITTER_SPRITES, getCritterSprite } from "@/components/oracle/critters/sprites";
 
 /** The active critter, as handed down by `OracleAvatar`. */
 export interface CanvasCritter {
@@ -57,6 +58,7 @@ export default function OracleCanvas({
   burst = 0,
   critter = null,
   reducedMotion = false,
+  critterRender = "draw",
 }: {
   speaking: boolean;
   appearance?: Appearance;
@@ -65,6 +67,8 @@ export default function OracleCanvas({
   critter?: CanvasCritter | null;
   /** Suppress critter idle wobble (loop itself is gated upstream). */
   reducedMotion?: boolean;
+  /** "draw" = faceted `drawCritter` trace (2D mode); "sprite" = reference-art PNG (Sprite mode). */
+  critterRender?: "draw" | "sprite";
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const speakingRef = useRef(speaking);
@@ -77,6 +81,8 @@ export default function OracleCanvas({
   critterRef.current = critter;
   const reducedRef = useRef(reducedMotion);
   reducedRef.current = reducedMotion;
+  const critterRenderRef = useRef(critterRender);
+  critterRenderRef.current = critterRender;
   /** Frame counter for throttling spell sparkles during a `zap`. */
   const zapTickRef = useRef(0);
 
@@ -260,14 +266,23 @@ export default function OracleCanvas({
         ctx!.save();
         ctx!.translate(cx, 150 + bob);
         ctx!.translate(crv.x, crv.y);
-        const sc = CRITTER_SCALE[cr.id] ?? 1;
-        ctx!.scale(crv.flip ? -sc : sc, sc);
         ctx!.globalAlpha = crv.alpha;
         // A soft drop shadow lifts the critter off the gnome / background.
         ctx!.shadowColor = "rgba(0,0,0,0.4)";
         ctx!.shadowBlur = 4;
         ctx!.shadowOffsetY = 1;
-        drawCritter(ctx!, cr.id, t);
+        const sprite =
+          critterRenderRef.current === "sprite" ? getCritterSprite(cr.id) : null;
+        if (sprite) {
+          const cfg = CRITTER_SPRITES[cr.id]!;
+          const w = cfg.h * (sprite.naturalWidth / sprite.naturalHeight);
+          if (crv.flip) ctx!.scale(-1, 1);
+          ctx!.drawImage(sprite, -w / 2, -cfg.h * (cfg.anchorY ?? 0.5), w, cfg.h);
+        } else {
+          const sc = CRITTER_SCALE[cr.id] ?? 1;
+          ctx!.scale(crv.flip ? -sc : sc, sc);
+          drawCritter(ctx!, cr.id, t);
+        }
         ctx!.restore();
       }
 

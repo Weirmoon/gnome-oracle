@@ -24,14 +24,17 @@ interface Character {
 
 type ResponseStyle = "funny-useful" | "mostly-comedy" | "oracle-chaos";
 
-type AvatarPref = "auto" | "3d" | "2d";
+type AvatarPref = "auto" | "3d" | "2d" | "sprite";
 type AvatarQualityPref = "high" | "low";
 
 const AVATAR_PREFS: { value: AvatarPref; label: string }[] = [
   { value: "auto", label: "Auto" },
   { value: "3d", label: "3D" },
   { value: "2d", label: "2D" },
+  { value: "sprite", label: "Sprite" },
 ];
+
+const AVATAR_PREF_VALUES: AvatarPref[] = ["auto", "3d", "2d", "sprite"];
 
 const AVATAR_QUALITIES: { value: AvatarQualityPref; label: string }[] = [
   { value: "high", label: "High" },
@@ -99,7 +102,13 @@ export default function Home() {
     : baseAppearance;
   const moods = selected?.meta.moods?.length ? selected.meta.moods : ["default"];
   const avatarQualityProp =
-    avatarPref === "auto" ? "auto" : avatarPref === "2d" ? "2d" : avatarQuality;
+    avatarPref === "auto"
+      ? "auto"
+      : avatarPref === "2d"
+        ? "2d"
+        : avatarPref === "sprite"
+          ? "sprite"
+          : avatarQuality;
 
   // Load personas, music playlist, and persisted prefs; subscribe to TTS state.
   useEffect(() => {
@@ -143,8 +152,8 @@ export default function Home() {
     if (storedVariant && (AVATAR_VARIANTS as string[]).includes(storedVariant)) {
       setVariantOverride(storedVariant as AvatarVariant);
     }
-    if (storedAvatar === "auto" || storedAvatar === "3d" || storedAvatar === "2d") {
-      setAvatarPref(storedAvatar);
+    if ((AVATAR_PREF_VALUES as string[]).includes(storedAvatar ?? "")) {
+      setAvatarPref(storedAvatar as AvatarPref);
     }
     if (storedAvatarQuality === "high" || storedAvatarQuality === "low") {
       setAvatarQuality(storedAvatarQuality);
@@ -380,7 +389,7 @@ export default function Home() {
               ))}
             </select>
           </div>
-          {avatarPref !== "2d" && (
+          {avatarPref !== "2d" && avatarPref !== "sprite" && (
             <div className="soundrow">
               <span className="iconbtn ghosticon">✦</span>
               <span className="soundlabel">Avatar quality</span>
