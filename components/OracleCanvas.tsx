@@ -2235,26 +2235,78 @@ export function drawCritter(ctx: CanvasRenderingContext2D, id: CritterId, t: num
       break;
     }
     case "wolf": {
-      drawBeast(ctx, { body: "#8f9aaa", dark: "#5c6470", ear: "prick", tail: "brush", snout: 6 });
-      ctx.fillStyle = "#c9d0d8";
-      ctx.beginPath();
-      ctx.moveTo(13, -4);
-      ctx.lineTo(20, -2);
-      ctx.lineTo(13, 1);
-      ctx.closePath();
-      ctx.fill();
+      // Faceted trace of critter-01 SIDE VIEW — standing wolf, facing +x.
+      const G = "#8b95a1";
+      const GL = "#a7b0ba";
+      const GD = "#6a7480";
+      const CR = "#d8cbb4";
+      const DK = "#2f2b28";
+      // far legs (behind, darker)
+      poly(ctx, [[-9, 4], [-6, 4], [-5, 18], [-9, 18]], GD);
+      poly(ctx, [[7, 4], [10, 4], [10, 18], [7, 18]], GD);
+      // bushy tail hanging back
+      poly(ctx, [[-13, -2], [-22, 2], [-24, 12], [-18, 16], [-12, 8], [-10, 0]], G);
+      poly(ctx, [[-22, 2], [-24, 12], [-19, 10], [-17, 3]], GD);
+      poly(ctx, [[-13, -2], [-22, 2], [-18, -4], [-11, -4]], GL);
+      poly(ctx, [[-24, 12], [-18, 16], [-19, 12]], DK);
+      // body
+      poly(ctx, [[-13, -4], [12, -6], [16, 2], [14, 10], [-11, 10], [-14, 3]], G);
+      poly(ctx, [[-13, -4], [12, -6], [10, 0], [-11, 1]], GL);
+      poly(ctx, [[-11, 4], [14, 5], [13, 13], [-10, 13]], CR); // belly
+      // near legs — cream, dark paws
+      poly(ctx, [[-8, 6], [-4, 6], [-3, 15], [-7, 15]], CR);
+      poly(ctx, [[-7, 15], [-3, 15], [-3, 19], [-8, 19]], DK);
+      poly(ctx, [[8, 6], [12, 6], [12, 15], [8, 15]], CR);
+      poly(ctx, [[8, 15], [12, 15], [12, 19], [7, 19]], DK);
+      // neck + head
+      poly(ctx, [[10, -4], [13, -14], [21, -18], [27, -12], [26, -2], [16, 2]], G);
+      poly(ctx, [[13, -14], [21, -18], [20, -11], [14, -9]], GL);
+      // muzzle — grey top, cream under, dark nose
+      poly(ctx, [[21, -12], [33, -9], [33, -4], [22, -2]], G);
+      poly(ctx, [[22, -4], [33, -4], [32, -1], [22, 0]], CR);
+      poly(ctx, [[31, -10], [35, -7], [31, -4]], DK);
+      // ears
+      poly(ctx, [[14, -14], [16, -25], [22, -16]], G);
+      poly(ctx, [[15, -15], [16, -23], [19, -17]], DK);
+      poly(ctx, [[19, -14], [22, -24], [26, -14]], GD);
+      // brow marking + eye
+      poly(ctx, [[15, -11], [22, -13], [21, -9], [15, -8]], GD);
+      eye(ctx, 20, -9, 1.3, "#c9a24a");
       break;
     }
     case "bobcat": {
-      drawBeast(ctx, { body: "#c98b5b", dark: "#8a5c38", ear: "tuft", tail: "stub", snout: 3 });
-      ctx.strokeStyle = "#8a5c38";
-      ctx.lineWidth = 1.4;
-      for (const sx of [-6, 0, 6]) {
-        ctx.beginPath();
-        ctx.moveTo(sx, -8);
-        ctx.lineTo(sx + 1, 3);
-        ctx.stroke();
+      // Faceted trace of critter-02 SIDE VIEW — standing lynx, facing +x.
+      const TW = "#c39a68";
+      const TWL = "#d6b287";
+      const TWD = "#9c7a52";
+      const SP = "#7a5636";
+      const CR = "#e9ddc6";
+      const DK = "#2a2420";
+      poly(ctx, [[-8, 4], [-5, 4], [-4, 18], [-8, 18]], TWD);
+      poly(ctx, [[8, 4], [11, 4], [11, 18], [8, 18]], TWD);
+      poly(ctx, [[-13, -2], [-19, -2], [-20, 4], [-14, 6]], TW); // bobbed tail
+      poly(ctx, [[-19, -2], [-20, 4], [-17, 3]], DK);
+      poly(ctx, [[-13, -4], [13, -6], [17, 2], [15, 9], [-11, 10], [-14, 3]], TW);
+      poly(ctx, [[-13, -4], [13, -6], [11, 0], [-11, 1]], TWL);
+      poly(ctx, [[-11, 5], [15, 6], [14, 10], [-10, 11]], CR);
+      for (const s of [[-6, 0], [0, -2], [6, -1], [-3, 4], [3, 3]]) {
+        poly(ctx, [[s[0], s[1]], [s[0] + 2, s[1] - 1], [s[0] + 3, s[1] + 1], [s[0] + 1, s[1] + 2]], SP);
       }
+      poly(ctx, [[-7, 6], [-3, 6], [-2, 16], [-7, 16]], TW);
+      poly(ctx, [[-7, 16], [-2, 16], [-2, 19], [-8, 19]], CR);
+      poly(ctx, [[8, 6], [12, 6], [12, 16], [8, 16]], TW);
+      poly(ctx, [[8, 16], [12, 16], [12, 19], [7, 19]], CR);
+      poly(ctx, [[11, -4], [13, -13], [20, -16], [26, -10], [25, -1], [16, 2]], TW);
+      poly(ctx, [[13, -13], [20, -16], [19, -10], [14, -8]], TWL);
+      poly(ctx, [[13, -4], [17, -3], [15, 6], [11, 3]], CR); // ruff
+      poly(ctx, [[23, -4], [27, -2], [24, 6], [21, 2]], CR);
+      poly(ctx, [[18, -8], [25, -6], [24, -2], [18, -1]], CR); // muzzle
+      poly(ctx, [[22, -7], [25, -5], [22, -3]], "#b56a52");
+      poly(ctx, [[14, -13], [15, -23], [20, -15]], TW); // ear
+      poly(ctx, [[15, -23], [15, -29], [17, -22]], DK); // black tuft
+      poly(ctx, [[13, -15], [15, -23], [16, -16]], CR);
+      poly(ctx, [[19, -13], [21, -22], [25, -13]], TWD);
+      eye(ctx, 18, -8, 1.5, "#d9a838");
       break;
     }
     case "fox": {
@@ -2308,36 +2360,89 @@ export function drawCritter(ctx: CanvasRenderingContext2D, id: CritterId, t: num
       break;
     }
     case "rabbit": {
-      drawBeast(ctx, { body: "#e4d5c8", dark: "#b39f90", ear: "long", tail: "stub", snout: 2 });
-      ctx.fillStyle = "#fdf7f0";
-      ctx.beginPath();
-      ctx.arc(-12, -2, 3.5, 0, Math.PI * 2); // cotton tail
-      ctx.fill();
+      // Faceted trace of critter-04 SIDE VIEW — sitting rabbit, facing +x.
+      const T = "#c9a878";
+      const TL = "#dcc199";
+      const TD = "#a8895f";
+      const CR = "#efe3cc";
+      const PK = "#e6a89a";
+      poly(ctx, [[-13, 4], [-8, 0], [-4, 4], [-8, 9]], CR); // cotton tail
+      poly(ctx, [[-12, 16], [-14, 4], [-9, -6], [4, -8], [9, 4], [6, 16]], T);
+      poly(ctx, [[-14, 4], [-9, -6], [-3, -1], [-9, 7]], TD);
+      poly(ctx, [[4, -4], [10, 0], [10, 13], [3, 15], [4, 0]], CR); // chest
+      poly(ctx, [[3, 10], [9, 10], [9, 16], [3, 16]], T); // front paw
+      poly(ctx, [[-9, 13], [-2, 13], [-2, 17], [-10, 17]], CR); // rear foot
+      poly(ctx, [[6, -4], [8, -13], [16, -14], [20, -7], [17, 0], [9, 1]], T);
+      poly(ctx, [[8, -13], [16, -14], [15, -8], [9, -7]], TL);
+      poly(ctx, [[15, -8], [22, -6], [21, -1], [15, 0]], CR); // muzzle
+      poly(ctx, [[20, -6], [23, -4], [20, -2]], PK); // nose
+      poly(ctx, [[10, -11], [9, -34], [14, -33], [15, -12]], T); // near ear
+      poly(ctx, [[10, -12], [10, -31], [13, -31], [13, -13]], PK); // pink inner
+      poly(ctx, [[14, -12], [15, -32], [19, -30], [17, -11]], TD); // far ear
+      eye(ctx, 13, -6, 1.7);
       break;
     }
     case "raccoon": {
-      drawBeast(ctx, { body: "#87909a", dark: "#3d4149", ear: "round", tail: "brush", snout: 3, mask: true });
-      ctx.strokeStyle = "#3d4149";
-      ctx.lineWidth = 2;
-      for (const rx of [-19, -15, -11]) {
-        ctx.beginPath();
-        ctx.moveTo(rx, -7);
-        ctx.lineTo(rx, 1);
-        ctx.stroke();
+      // Faceted trace of critter-05 SIDE VIEW — upright raccoon, facing +x.
+      const GR = "#8f857a";
+      const GRL = "#a89d90";
+      const GRD = "#6b6259";
+      const MK = "#2e2823";
+      const CR = "#e8ded0";
+      const DK = "#241f1b";
+      // ringed tail, curving up behind
+      poly(ctx, [[-8, 10], [-18, 4], [-24, -8], [-20, -20], [-12, -18], [-6, -6], [-4, 4]], GR);
+      for (let i = 0; i < 3; i++) {
+        const yy = -16 + i * 8;
+        poly(ctx, [[-22 + i * 3, yy], [-14 + i * 2, yy + 3], [-16 + i * 2, yy + 7], [-24 + i * 3, yy + 4]], MK);
       }
+      poly(ctx, [[-24, -8], [-20, -20], [-16, -19], [-19, -9]], CR); // pale tip
+      // body
+      poly(ctx, [[-8, 17], [-12, 4], [-8, -8], [4, -10], [10, 2], [7, 17]], GR);
+      poly(ctx, [[-12, 4], [-8, -8], [-2, -3], [-8, 7]], GRD);
+      poly(ctx, [[2, -4], [9, 0], [9, 14], [1, 16], [2, -1]], CR); // pale belly
+      poly(ctx, [[-6, 12], [-1, 12], [-1, 18], [-7, 18]], DK);
+      poly(ctx, [[3, 12], [8, 12], [8, 18], [2, 18]], DK);
+      poly(ctx, [[6, 2], [11, 3], [10, 8], [6, 7]], DK); // dark hand
+      // head + snout
+      poly(ctx, [[5, -6], [6, -16], [15, -19], [22, -12], [20, -3], [10, 0]], GR);
+      poly(ctx, [[16, -11], [26, -9], [26, -5], [17, -3]], GR);
+      poly(ctx, [[17, -5], [26, -5], [25, -2], [17, -1]], CR);
+      poly(ctx, [[24, -9], [28, -7], [24, -4]], DK); // nose
+      poly(ctx, [[6, -14], [18, -12], [18, -9], [6, -10]], CR); // white stripe
+      poly(ctx, [[7, -11], [19, -9], [18, -4], [7, -5]], MK); // bandit mask
+      // ears
+      poly(ctx, [[8, -15], [9, -25], [15, -17]], MK);
+      poly(ctx, [[8, -15], [9, -25], [11, -19]], CR);
+      poly(ctx, [[14, -15], [16, -24], [21, -14]], GRD);
+      eye(ctx, 12, -7, 1.4);
       break;
     }
     case "squirrel": {
-      ctx.fillStyle = "#ad7044";
-      ctx.beginPath(); // big curled tail behind
-      ctx.moveTo(-8, 4);
-      ctx.quadraticCurveTo(-24, 2, -20, -14);
-      ctx.quadraticCurveTo(-16, -24, -6, -18);
-      ctx.quadraticCurveTo(-14, -14, -12, -4);
-      ctx.quadraticCurveTo(-12, 2, -6, 4);
-      ctx.closePath();
-      ctx.fill();
-      drawBeast(ctx, { body: "#ad7044", dark: "#7a4d2c", ear: "round", tail: "none", snout: 2 });
+      // Sitting squirrel, huge curling tail, holding an acorn. Facing +x.
+      const R = "#a86a3e";
+      const RL = "#c08a58";
+      const RD = "#7d4d2a";
+      const CR = "#e8d4b8";
+      const DK = "#2a2018";
+      poly(ctx, [[-2, 14], [-14, 10], [-20, -2], [-18, -16], [-8, -24], [2, -20], [-4, -10], [-4, 4]], R);
+      poly(ctx, [[-18, -16], [-8, -24], [-4, -14], [-14, -8]], RL);
+      poly(ctx, [[-14, 10], [-20, -2], [-14, -2], [-8, 10]], RD);
+      poly(ctx, [[-8, -24], [2, -20], [0, -15], [-6, -19]], RL);
+      poly(ctx, [[-6, 16], [-9, 3], [-5, -8], [6, -9], [10, 3], [6, 16]], R);
+      poly(ctx, [[2, -4], [8, 0], [8, 13], [1, 15], [2, -1]], CR);
+      poly(ctx, [[-9, 3], [-5, -8], [0, -3], [-6, 6]], RD);
+      poly(ctx, [[-5, 13], [1, 13], [1, 17], [-6, 17]], DK);
+      poly(ctx, [[5, 4], [9, 5], [8, 10], [5, 9]], R);
+      poly(ctx, [[7, 5], [11, 6], [10, 10], [7, 10]], "#8a6a3a"); // acorn
+      poly(ctx, [[5, -6], [6, -15], [14, -17], [19, -11], [17, -3], [9, -1]], R);
+      poly(ctx, [[6, -15], [14, -17], [13, -11], [7, -10]], RL);
+      poly(ctx, [[14, -9], [20, -7], [19, -3], [14, -2]], CR);
+      poly(ctx, [[18, -8], [21, -6], [18, -4]], DK);
+      poly(ctx, [[8, -14], [8, -22], [13, -16]], R);
+      poly(ctx, [[8, -22], [8, -25], [10, -21]], RD);
+      poly(ctx, [[12, -14], [14, -21], [18, -13]], RD);
+      eye(ctx, 12, -8, 1.6);
       break;
     }
     case "hedgehog": {
@@ -2374,7 +2479,39 @@ export function drawCritter(ctx: CanvasRenderingContext2D, id: CritterId, t: num
       break;
     }
     case "goat": {
-      drawBeast(ctx, { body: "#d8d1bf", dark: "#a39a83", ear: "long", tail: "stub", snout: 4, horns: true, beard: true });
+      // Faceted trace of critter-10 SIDE VIEW — stocky goat, swept horns, goatee. Facing +x.
+      const GT = "#dfd3ba";
+      const GTL = "#ede3cd";
+      const GTD = "#bcae90";
+      const HN = "#7a5a3c";
+      const HNL = "#9a7550";
+      const DK = "#3a3128";
+      poly(ctx, [[-7, 6], [-4, 6], [-3, 18], [-7, 18]], GTD);
+      poly(ctx, [[9, 6], [12, 6], [12, 18], [9, 18]], GTD);
+      poly(ctx, [[-12, -2], [13, -4], [16, 4], [14, 11], [-11, 12], [-14, 5]], GT);
+      poly(ctx, [[-12, -2], [13, -4], [11, 3], [-11, 4]], GTL);
+      poly(ctx, [[-11, 7], [14, 8], [13, 12], [-10, 12]], GTD);
+      poly(ctx, [[-12, -1], [-16, -3], [-15, 3], [-11, 4]], GT); // tail
+      poly(ctx, [[-6, 7], [-2, 7], [-1, 16], [-6, 16]], GT);
+      poly(ctx, [[-6, 16], [-1, 16], [-1, 19], [-7, 19]], DK);
+      poly(ctx, [[9, 7], [13, 7], [13, 16], [9, 16]], GT);
+      poly(ctx, [[9, 16], [13, 16], [13, 19], [8, 19]], DK);
+      poly(ctx, [[11, -2], [13, -11], [22, -13], [28, -7], [27, 1], [16, 3]], GT);
+      poly(ctx, [[13, -11], [22, -13], [21, -7], [14, -5]], GTL);
+      poly(ctx, [[22, -6], [30, -5], [30, 1], [22, 2]], GTL); // square muzzle
+      poly(ctx, [[28, -3], [31, -1], [28, 1]], "#b89a7a");
+      poly(ctx, [[24, 2], [28, 2], [27, 10], [23, 7]], "#6b4d33"); // goatee
+      poly(ctx, [[13, -6], [8, -4], [10, 2], [15, -1]], GT); // floppy ear
+      poly(ctx, [[15, -11], [13, -24], [18, -30], [21, -25], [18, -14]], HN);
+      poly(ctx, [[15, -11], [13, -24], [16, -22], [17, -13]], HNL);
+      poly(ctx, [[18, -11], [17, -22], [22, -27], [24, -22], [21, -12]], DK); // far horn
+      poly(ctx, [[15, -8], [22, -9], [22, -6], [15, -5]], DK); // dark brow
+      ctx.fillStyle = "#e0c24a";
+      ctx.beginPath();
+      ctx.ellipse(19, -4, 1.8, 2.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = CC.dark;
+      ctx.fillRect(17.5, -4.6, 3, 1.2); // rectangular pupil
       break;
     }
     case "porcupine": {

@@ -29,8 +29,8 @@ function SpriteCell({ id }: { id: CritterId }) {
     const loop = (now: number) => {
       ctx.clearRect(0, 0, c.width, c.height);
       ctx.save();
-      ctx.translate(c.width / 2 - 12, c.height / 2 + 34);
-      ctx.scale(3.6, 3.6);
+      ctx.translate(c.width / 2 - 18, c.height / 2 + 30);
+      ctx.scale(3.1, 3.1);
       drawCritter(ctx, id, (now - start) / 1000);
       ctx.restore();
       raf = requestAnimationFrame(loop);
