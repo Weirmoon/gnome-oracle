@@ -1,0 +1,7 @@
+body { padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); overscroll-behavior-y: contain; }
+button, a, input, select { touch-action: manipulation; }
+@media (pointer: coarse) {
+  button, select, input:not([type="range"]):not([type="checkbox"]), a.navlink { min-height: 44px; }
+  .topbar { flex-wrap: wrap; }
+  input, select, textarea { font-size: max(16px, 1em); }
+}

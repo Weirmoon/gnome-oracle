@@ -1,0 +1,2 @@
+com.weirmoon.gnomemobile
+xml gnome_export_paths

@@ -405,6 +405,21 @@ button.danger {
   color: var(--accent);
 }
 
+.fortune {
+  margin: 4px 0 0;
+  color: var(--accent2);
+  font-style: italic;
+  text-align: center;
+}
+.consultation-status { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-height: 32px; color: var(--muted); font-size: .78rem; }
+.consultation-status button { padding: 6px 10px; font-size: .75rem; }
+.quick-actions, .starter-row { flex-wrap: wrap; justify-content: center; }
+.starter-row { display: flex; gap: 8px; margin-top: 10px; }
+.starter { font-size: .8rem; }
+.editor, .council { margin-top: 18px; }
+.editor h2, .council h2 { margin-top: 0; color: var(--accent); }
+.council .histcard { margin: 12px 0; }
+
 @media (max-width: 720px) {
   .controlgrid {
     grid-template-columns: 1fr;

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./background.css";
+import { BackgroundProvider } from "@/components/background/BackgroundProvider";
 
 export const metadata: Metadata = {
   title: "The Gnome Oracle",
@@ -11,7 +13,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body><BackgroundProvider>{children}</BackgroundProvider></body>
     </html>
   );
 }

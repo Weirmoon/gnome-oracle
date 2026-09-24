@@ -44,3 +44,17 @@ The script will:
 
 If you want the app on a non-default port or with a different model, set `PORT`,
 `OLLAMA_MODEL`, or `OLLAMA_URL` before running the script.
+
+## AI connections
+
+The web app starts with Ollama using `OLLAMA_URL`, `OLLAMA_MODEL`, and
+`OLLAMA_NUM_CTX`. The Settings panel can also manage OpenRouter, LM Studio, and
+any OpenAI-compatible chat-completions endpoint. Set `GNOME_ADMIN_TOKEN` and
+`GNOME_DEPLOYMENT_SECRET` to different persistent secrets of at least 32
+characters before saving connections through the web UI. The first protects
+connection management; the second encrypts saved API keys. Provider keys never
+enter history or backups.
+
+For installed Windows, Linux, and Android builds, see
+[README-NATIVE.md](README-NATIVE.md). Android `localhost` means the phone, so a
+model server on a computer must be configured with that computer's LAN address.

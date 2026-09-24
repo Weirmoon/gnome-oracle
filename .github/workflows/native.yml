@@ -1,0 +1,52 @@
+name: Native builds
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  desktop:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: nsis
+          - os: ubuntu-22.04
+            target: appimage,deb
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build Tauri bundles
+        run: npm run tauri -- build --bundles ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gnome-oracle-${{ matrix.os }}
+          path: src-tauri/target/release/bundle/**
+
+  android:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - run: npm run tauri -- android build --apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gnome-oracle-android
+          path: src-tauri/gen/android/**/build/outputs/apk/**/*.apk

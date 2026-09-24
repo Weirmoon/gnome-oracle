@@ -6,7 +6,12 @@
     "dev": "next dev -p 8080",
     "build": "next build",
     "start": "next start -p 8080",
-    "lint": "next lint"
+    "lint": "tsc --noEmit",
+    "native:dev": "vite --config native/vite.config.ts",
+    "native:build": "vite build --config native/vite.config.ts",
+    "tauri": "tauri",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@react-three/fiber": "^9.1.2",
@@ -14,7 +19,8 @@
     "next": "^15.1.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "three": "^0.176.0"
+    "three": "^0.176.0",
+    "@tauri-apps/api": "^2.0.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
@@ -22,6 +28,10 @@
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
     "@types/three": "^0.176.0",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@tauri-apps/cli": "^2.0.0",
+    "tsx": "^4.20.0"
   }
 }

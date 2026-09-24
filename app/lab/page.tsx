@@ -1,20 +1,15 @@
 "use client";
+import { apiFetch } from "@/lib/platform/client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import type { PersonaMeta } from "@/lib/persona";
 
-interface Character {
-  id: number;
-  name: string;
-  emoji: string;
-  description: string;
-  is_seed: number;
-  meta: PersonaMeta;
-}
-
+import type { Character } from "@/lib/domain/types";
+import PersonaEditor from "@/components/PersonaEditor";
 export default function Lab() {
+  const [editing, setEditing] = useState<Character | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [vibe, setVibe] = useState("");
   const [busy, setBusy] = useState(false);
@@ -22,7 +17,7 @@ export default function Lab() {
   const [justMade, setJustMade] = useState<Character | null>(null);
 
   function load() {
-    fetch("/api/characters")
+    apiFetch("/api/characters")
       .then((r) => r.json())
       .then(setCharacters)
       .catch(() => {});
@@ -36,7 +31,7 @@ export default function Lab() {
     setError("");
     setJustMade(null);
     try {
-      const res = await fetch("/api/characters/generate", {
+      const res = await apiFetch("/api/characters/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ vibe }),
@@ -57,7 +52,7 @@ export default function Lab() {
   }
 
   async function remove(id: number) {
-    const res = await fetch(`/api/characters/${id}`, { method: "DELETE" });
+    const res = await apiFetch(`/api/characters/${id}`, { method: "DELETE" });
     if (res.ok) {
       load();
     } else {
@@ -103,6 +98,11 @@ export default function Lab() {
         )}
       </div>
 
+      {editing && <PersonaEditor key={editing.id} character={editing} onSaved={load} onClose={() => setEditing(null)} />}
+      <label className="field">Import a persona<input type="file" accept=".json,application/json" onChange={async e => {
+        const file = e.target.files?.[0]; e.target.value = ""; if (!file) return;
+        try { if (file.size > 100000) throw new Error("Persona file is too large."); const data = JSON.parse(await file.text()); if (data.version !== 1 || !data.persona) throw new Error("Unsupported persona file."); const res = await apiFetch("/api/characters", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data.persona) }); if (!res.ok) throw new Error((await res.json()).error); load(); } catch (err) { setError((err as Error).message); }
+      }} /></label>
       <h2 className="section-title">All Personas</h2>
       <ul className="list">
         {characters.map((c) => (
@@ -123,6 +123,7 @@ export default function Lab() {
               <b>{c.name}</b>
               <small>{c.description}</small>
             </span>
+            <button className="ghost" onClick={() => setEditing(c)}>{c.is_seed ? "Duplicate / edit" : "Edit"}</button>
             {c.is_seed ? (
               <span className="badge">built-in</span>
             ) : (

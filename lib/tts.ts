@@ -1,3 +1,4 @@
+import { hasNativeTts, ttsSpeak, ttsCancel } from "./platform/client";
 // Client-side text-to-speech using the browser's built-in speechSynthesis.
 // Speaks sentence-by-sentence as the answer streams in, so the wizard starts
 // talking almost immediately and the mouth stays roughly in sync with audio.
@@ -30,7 +31,7 @@ class Tts {
   private boundaryListeners = new Set<BoundaryCb>();
 
   supported(): boolean {
-    return typeof window !== "undefined" && "speechSynthesis" in window;
+    return hasNativeTts() || (typeof window !== "undefined" && "speechSynthesis" in window);
   }
 
   setMuted(m: boolean) {
@@ -110,7 +111,17 @@ class Tts {
     }
   }
 
+  whenIdle(): Promise<void> {
+    if (!this.active) return Promise.resolve();
+    return new Promise(resolve => { const off = this.onSpeakingChange(speaking => { if (!speaking) { off(); resolve(); } }); });
+  }
+
   private speak(text: string) {
+    if (hasNativeTts()) {
+      this.active++; this.notify();
+      void ttsSpeak(text, this.voice, this.volume).catch(() => {}).finally(() => { this.active = Math.max(0, this.active - 1); this.notify(); });
+      return;
+    }
     const u = new SpeechSynthesisUtterance(text);
     u.rate = this.voice.rate;
     u.pitch = this.voice.pitch;
@@ -140,8 +151,10 @@ class Tts {
   }
 
   cancel() {
+    this.buffer = "";
     if (!this.supported()) return;
-    window.speechSynthesis.cancel();
+    if (hasNativeTts()) void ttsCancel();
+    else window.speechSynthesis.cancel();
     this.active = 0;
     this.notify();
   }

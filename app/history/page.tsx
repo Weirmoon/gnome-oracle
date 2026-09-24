@@ -1,4 +1,5 @@
 "use client";
+import { apiFetch } from "@/lib/platform/client";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -11,6 +12,8 @@ interface HistoryRow {
   answer: string;
   favorite: number;
   created_at: string;
+  consultation_id?: number | null;
+  phase?: string;
 }
 
 function timeAgo(iso: string): string {
@@ -30,7 +33,7 @@ export default function History() {
   const [favoritesOnly, setFavoritesOnly] = useState(false);
 
   const load = useCallback(() => {
-    fetch(`/api/history${favoritesOnly ? "?favorites=1" : ""}`)
+    apiFetch(`/api/history${favoritesOnly ? "?favorites=1" : ""}`)
       .then((r) => r.json())
       .then(setRows)
       .catch(() => {});
@@ -39,12 +42,12 @@ export default function History() {
   useEffect(load, [load]);
 
   async function toggleFav(id: number) {
-    const res = await fetch(`/api/history/${id}`, { method: "PATCH" });
+    const res = await apiFetch(`/api/history/${id}`, { method: "PATCH" });
     if (res.ok) load();
   }
 
   async function remove(id: number) {
-    const res = await fetch(`/api/history/${id}`, { method: "DELETE" });
+    const res = await apiFetch(`/api/history/${id}`, { method: "DELETE" });
     if (res.ok) load();
   }
 
@@ -103,6 +106,7 @@ export default function History() {
             </div>
             <p className="histq">“{r.question}”</p>
             <p className="hista">{r.answer || "…"}</p>
+            {r.consultation_id && <Link className="navlink" href={r.phase?.startsWith("council-") ? `/council?resume=${r.consultation_id}` : `/consultation/${r.consultation_id}`}>↩ Continue consultation</Link>}
           </li>
         ))}
       </ul>

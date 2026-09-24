@@ -1,4 +1,5 @@
 "use client";
+import { apiFetch } from "@/lib/platform/client";
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -9,6 +10,11 @@ import type { PersonaMeta, AvatarVariant } from "@/lib/persona";
 import { AVATAR_VARIANTS } from "@/lib/persona";
 import { tts } from "@/lib/tts";
 import { sound } from "@/lib/sound";
+import { BackgroundSettings } from "@/components/background";
+import ProviderSettings from "@/components/settings/ProviderSettings";
+import BackupSettings from "@/components/settings/BackupSettings";
+import { exportProphecyCard } from "@/lib/cards";
+import { emitBackgroundPulse } from "@/lib/background";
 
 // Loaded only when the settings panel opens, so the critter catalog stays out
 // of the initial "/" bundle.
@@ -75,6 +81,7 @@ export default function Home() {
   const [volumes, setVolumes] = useState<Volumes>(DEFAULT_VOLUMES);
   const [showSettings, setShowSettings] = useState(false);
   const [historyId, setHistoryId] = useState<number | null>(null);
+  const [consultationId, setConsultationId] = useState<number | null>(null);
   const [favorited, setFavorited] = useState(false);
   const [outfitIndex, setOutfitIndex] = useState(0);
   /** "" = use whatever the persona specifies; otherwise force this body. */
@@ -85,7 +92,9 @@ export default function Home() {
   const [avatarPref, setAvatarPref] = useState<AvatarPref>("auto");
   const [avatarQuality, setAvatarQuality] = useState<AvatarQualityPref>("high");
   const [crittersOn, setCrittersOn] = useState(false);
+  const [generatedQuipsOn, setGeneratedQuipsOn] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [fortune, setFortune] = useState("");
   const critterApi = useRef<CritterApi | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -112,7 +121,7 @@ export default function Home() {
 
   // Load personas, music playlist, and persisted prefs; subscribe to TTS state.
   useEffect(() => {
-    fetch("/api/characters")
+    apiFetch("/api/characters")
       .then((r) => r.json())
       .then((data: Character[]) => {
         setCharacters(data);
@@ -120,7 +129,7 @@ export default function Home() {
       })
       .catch(() => {});
 
-    fetch("/api/music")
+    apiFetch("/api/music")
       .then((r) => r.json())
       .then((tracks: string[]) => sound.setPlaylist(tracks))
       .catch(() => {});
@@ -133,6 +142,7 @@ export default function Home() {
     const storedAvatar = localStorage.getItem("gnome.avatar");
     const storedAvatarQuality = localStorage.getItem("gnome.avatarQuality");
     const storedCritters = localStorage.getItem("gnome.critters");
+    const storedGeneratedQuips = localStorage.getItem("gnome.generatedQuips");
     const voiceOnPref = voice === null ? true : voice === "1";
     const musicOnPref = music === null ? true : music === "1";
     const vols: Volumes = {
@@ -163,6 +173,7 @@ export default function Home() {
       typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
     setReducedMotion(reduce);
     setCrittersOn(reduce ? false : storedCritters === null ? true : storedCritters === "1");
+    setGeneratedQuipsOn(storedGeneratedQuips === "1");
 
     tts.setMuted(!voiceOnPref);
     tts.setVolume(vols.voice);
@@ -192,6 +203,9 @@ export default function Home() {
 
   function onPersonaChange(id: number) {
     setSelectedId(id);
+    setConsultationId(null);
+    setAnswer("");
+    setHistoryId(null);
     sound.resume();
     const next = characters.find((c) => c.id === id);
     if (next) sound.setTheme(next.meta.sfx);
@@ -299,14 +313,16 @@ export default function Home() {
     let firstChunk = true;
 
     try {
-      const res = await fetch("/api/ask", {
+      const res = await apiFetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, characterId: selectedId, responseStyle, mood }),
+        body: JSON.stringify({ question, characterId: selectedId, consultationId: consultationId ?? undefined, responseStyle, mood }),
         signal: ac.signal,
       });
       const hid = res.headers.get("X-History-Id");
       if (hid) setHistoryId(Number(hid));
+      const cid = res.headers.get("X-Consultation-Id");
+      if (cid) setConsultationId(Number(cid));
       if (!res.body) {
         setAnswer("*silence* (no response)");
         return;
@@ -335,7 +351,7 @@ export default function Home() {
     } finally {
       setStreaming(false);
     }
-  }, [question, selectedId, streaming, responseStyle, mood]);
+  }, [question, selectedId, consultationId, streaming, responseStyle, mood]);
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter") ask();
@@ -343,11 +359,45 @@ export default function Home() {
 
   async function favorite() {
     if (historyId == null) return;
-    const res = await fetch(`/api/history/${historyId}`, { method: "PATCH" });
+    const res = await apiFetch(`/api/history/${historyId}`, { method: "PATCH" });
     if (res.ok) {
       const data = await res.json();
       setFavorited(!!data.favorite);
     }
+  }
+
+  function toggleGeneratedQuips() {
+    const next = !generatedQuipsOn;
+    setGeneratedQuipsOn(next);
+    localStorage.setItem("gnome.generatedQuips", next ? "1" : "0");
+  }
+
+  function offerMushroom() {
+    const next = moods[Math.floor(Math.random() * moods.length)] ?? "default";
+    changeMood(next);
+    setFortune(`${selected?.name ?? "The oracle"} accepts the mushroom and becomes ${labelize(next)}.`);
+    emitBackgroundPulse();
+  }
+
+  function generateFortune() {
+    const fortunes = [
+      "The path ahead contains one useful button and at least two suspicious detours.",
+      "A small decision will soon become a story you tell with unnecessary confidence.",
+      "Your future is bright, provided you stop asking the toaster for legal advice.",
+      "A helpful stranger, a warm snack, and a lucky refresh are approaching.",
+    ];
+    setFortune(fortunes[Math.floor(Math.random() * fortunes.length)]);
+    emitBackgroundPulse();
+  }
+
+  function newConsultation() {
+    abortRef.current?.abort();
+    tts.cancel();
+    setConsultationId(null);
+    setHistoryId(null);
+    setAnswer("");
+    setQuestion("");
+    setFortune("");
   }
 
   return (
@@ -369,6 +419,9 @@ export default function Home() {
           </Link>
           <Link className="navlink" href="/lab">
             🧪 Lab
+          </Link>
+          <Link className="navlink" href="/council">
+            ⚖️ Council
           </Link>
         </nav>
       </div>
@@ -413,6 +466,11 @@ export default function Home() {
             onToggle={toggleCritters}
             api={critterApi}
           />
+          <div className="soundrow">
+            <button className="iconbtn" onClick={toggleGeneratedQuips}>{generatedQuipsOn ? "🧠" : "💬"}</button>
+            <span className="soundlabel">Generated critter quips</span>
+            <span className="soundhint">{generatedQuipsOn ? "Uses the active AI connection" : "Canned lines only"}</span>
+          </div>
           <div className="soundrow">
             <button className="iconbtn" onClick={toggleVoice}>
               {voiceOn ? "🔊" : "🔇"}
@@ -467,12 +525,18 @@ export default function Home() {
               onChange={(e) => changeVolume("typing", Number(e.target.value))}
             />
           </div>
+          <BackgroundSettings />
+          <ProviderSettings />
+          <BackupSettings />
         </div>
       )}
 
       <p className="tagline">
         Ask anything. Receive vibes, riddles, and the bare minimum of an answer.
       </p>
+      <div className="consultation-status">
+        {consultationId ? <><span>Consultation #{consultationId}</span><button type="button" className="ghost" onClick={newConsultation}>New consultation</button></> : <span>New consultation</span>}
+      </div>
 
       <div className="panel stage">
         <OracleAvatar
@@ -494,6 +558,7 @@ export default function Home() {
           {answer ||
             (speaking ? "The oracle stirs…" : "Pick a persona and ask me something silly.")}
         </div>
+        {fortune && <p className="fortune" role="status">🔮 {fortune}</p>}
         {answer && !streaming && (
           <div className="row answeractions">
             <button className="ghost favbtn" onClick={() => tts.replay(answer)}>
@@ -504,8 +569,12 @@ export default function Home() {
                 {favorited ? "⭐ Favorited" : "☆ Favorite this"}
               </button>
             )}
+            <button className="ghost favbtn" onClick={() => exportProphecyCard(question, answer, selected?.name ?? "The Gnome Oracle", selected?.meta.appearance).catch((error) => setFortune(error.message))}>
+              🖼️ Export card
+            </button>
           </div>
         )}
+        {!answer && !streaming && <div className="row quick-actions"><button className="ghost" onClick={generateFortune}>🔮 Read my fortune</button><button className="ghost" onClick={offerMushroom}>🍄 Offer a mushroom</button></div>}
       </div>
 
       <div className="controls">
@@ -593,6 +662,9 @@ export default function Home() {
           <button onClick={ask} disabled={streaming || !question.trim()}>
             {streaming ? "Conjuring…" : "Ask the Oracle"}
           </button>
+        </div>
+        <div className="starter-row" aria-label="Question starters">
+          {["Settle an argument: which option is secretly better?", "Give me dubious wisdom about today.", "Surprise me with a tiny prophecy."] .map((starter) => <button type="button" className="ghost starter" key={starter} onClick={() => setQuestion(starter)}>{starter.startsWith("Settle") ? "⚔️ Settle an argument" : starter.startsWith("Give") ? "🪄 Dubious wisdom" : "🎲 Surprise me"}</button>)}
         </div>
       </div>
     </main>

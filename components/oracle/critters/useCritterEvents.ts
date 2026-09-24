@@ -1,4 +1,5 @@
 "use client";
+import { apiFetch } from "@/lib/platform/client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { sound } from "@/lib/sound";
@@ -123,10 +124,10 @@ export function useCritterEvents({
         tts.begin();
       }
       try {
-        const res = await fetch("/api/quip", {
+        const res = await apiFetch("/api/quip", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ characterId, critterId: critter.id, mood }),
+          body: JSON.stringify({ characterId, critterId: critter.id, mood, generated: localStorage.getItem("gnome.generatedQuips") === "1" }),
           signal: ctrl.signal,
         });
         if (!res.ok || !res.body) throw new Error(String(res.status));
