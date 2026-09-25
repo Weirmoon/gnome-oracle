@@ -48,7 +48,7 @@ export default function SearchSettings({ adminToken }: { adminToken: string }) {
   }
 
   if (!status) return error ? <p role="alert" style={{ color: "#ffb3b3" }}>{error}</p> : null;
-  if (!status.available) return <p className="muted">Web search isn’t available on this server.</p>;
+  if (!status.available) return <p className="muted">🔎 Web search: {status.reason ?? "not available on this server."}</p>;
   return <div style={{ display: "grid", gap: 6 }}>
     <label><input type="checkbox" checked={status.enabled} disabled={busy} onChange={event => void toggle(event.target.checked)} /> 🔎 Look things up on the web (SearXNG)</label>
     <p className="muted" role="status" style={{ margin: 0 }}>{STATE_TEXT[status.state]}{status.error ? ` ${status.error}` : ""} Critter quips never search.</p>

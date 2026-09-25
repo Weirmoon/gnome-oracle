@@ -166,3 +166,19 @@ test("settings use the default password Gnome until GNOME_ADMIN_TOKEN is set", (
     if (saved === undefined) delete process.env.GNOME_ADMIN_TOKEN; else process.env.GNOME_ADMIN_TOKEN = saved;
   }
 });
+
+test("web search explains how to set it up when SearXNG isn't installed", async () => {
+  const saved = process.env.SEARXNG_CONTROL;
+  process.env.SEARXNG_CONTROL = "none";
+  delete (globalThis as { __gnomeSearch?: unknown }).__gnomeSearch;
+  try {
+    const { searchStatus, webSearch } = await import("../lib/search/searxng");
+    const status = await searchStatus();
+    assert.equal(status.available, false);
+    assert.match(status.reason ?? "", /install-linux\.sh/);
+    assert.deepEqual(await webSearch("anything"), []);
+  } finally {
+    if (saved === undefined) delete process.env.SEARXNG_CONTROL; else process.env.SEARXNG_CONTROL = saved;
+    delete (globalThis as { __gnomeSearch?: unknown }).__gnomeSearch;
+  }
+});

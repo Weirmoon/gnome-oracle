@@ -2,11 +2,11 @@
  * Server-only control of a local SearXNG instance. Turning search on starts
  * SearXNG and turning it off stops it, so it only uses memory while wanted.
  *
- * SEARXNG_CONTROL picks how:
- *  - "docker"  (default): runs/starts/stops a `gnome-searxng` container directly (dev machines)
+ * SEARXNG_CONTROL picks how; when unset it is detected in this order:
  *  - "systemd": `systemctl start|stop gnome-searxng` (servers; see deploy/install-linux.sh,
  *               which grants this app's user permission for that one unit via polkit)
- *  - "none":    search is unavailable
+ *  - "docker":  runs/starts/stops a `gnome-searxng` container directly (dev machines)
+ *  - "none":    search is unavailable, and the status says how to set it up
  */
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -15,9 +15,10 @@ import path from "node:path";
 import type { SearchResult } from "./format";
 
 export type SearchState = "stopped" | "starting" | "running" | "stopping" | "error";
-export interface SearchStatus { available: boolean; enabled: boolean; state: SearchState; error?: string }
+export interface SearchStatus { available: boolean; enabled: boolean; state: SearchState; error?: string; reason?: string }
 
-const CONTROL = (process.env.SEARXNG_CONTROL || "docker") as "docker" | "systemd" | "none";
+type Control = "docker" | "systemd" | "none";
+const NOT_INSTALLED = "SearXNG isn't set up on this server. On Linux, re-run deploy/install-linux.sh to add it; on another machine, install Docker.";
 const URL_BASE = (process.env.SEARXNG_URL || "http://127.0.0.1:8888").replace(/\/+$/, "");
 const CONTAINER = "gnome-searxng";
 const UNIT = "gnome-searxng";
@@ -27,16 +28,29 @@ const statePath = () => path.join(dataDir(), "search.json");
 
 // One state per process: Next.js gives each route its own module copy (and dev
 // reloads reset them), so the in-flight start/stop must live on globalThis.
-interface Shared { state: SearchState; lastError?: string; transition: Promise<void> | null; reconciled: boolean }
+interface Shared { state: SearchState; lastError?: string; transition: Promise<void> | null; reconciled: boolean; control?: Promise<Control> }
 const shared: Shared = ((globalThis as { __gnomeSearch?: Shared }).__gnomeSearch ??= { state: "stopped", transition: null, reconciled: false });
 
 function run(file: string, args: string[], timeout = 15 * 60_000): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(file, args, { timeout, windowsHide: true }, (error, stdout, stderr) => {
-      if (error) reject(new Error((stderr || error.message).trim().split("\n").pop() || "Command failed."));
+      if ((error as NodeJS.ErrnoException | null)?.code === "ENOENT") reject(new Error(`${file} isn't installed or isn't on this service's PATH. ${NOT_INSTALLED}`));
+      else if (error) reject(new Error((stderr || error.message).trim().split("\n").pop() || "Command failed."));
       else resolve(stdout.trim());
     });
   });
+}
+
+/** Honour SEARXNG_CONTROL, else use whatever is actually installed. */
+function detectControl(): Promise<Control> {
+  shared.control ??= (async (): Promise<Control> => {
+    const chosen = process.env.SEARXNG_CONTROL;
+    if (chosen === "docker" || chosen === "systemd" || chosen === "none") return chosen;
+    if (process.platform === "linux" && await run("systemctl", ["cat", `${UNIT}.service`], 10_000).then(() => true, () => false)) return "systemd";
+    if (await run("docker", ["--version"], 10_000).then(() => true, () => false)) return "docker";
+    return "none";
+  })();
+  return shared.control;
 }
 
 function readEnabled(): boolean {
@@ -73,6 +87,7 @@ function ensureDockerSettings(): string {
 }
 
 async function isRunning(): Promise<boolean> {
+  const CONTROL = await detectControl();
   if (CONTROL === "docker") return (await run("docker", ["inspect", "-f", "{{.State.Running}}", CONTAINER], 20_000).catch(() => "false")) === "true";
   if (CONTROL === "systemd") return (await run("systemctl", ["is-active", UNIT], 20_000).catch(() => "inactive")) === "active";
   return false;
@@ -83,7 +98,7 @@ async function healthy(): Promise<boolean> {
 }
 
 async function startService() {
-  if (CONTROL === "docker") {
+  if (await detectControl() === "docker") {
     const exists = await run("docker", ["inspect", CONTAINER], 20_000).then(() => true, () => false);
     if (exists) await run("docker", ["start", CONTAINER]);
     else {
@@ -101,7 +116,7 @@ async function startService() {
 }
 
 async function stopService() {
-  if (CONTROL === "docker") await run("docker", ["stop", "-t", "5", CONTAINER]).catch(async error => { if (await isRunning()) throw error; });
+  if (await detectControl() === "docker") await run("docker", ["stop", "-t", "5", CONTAINER]).catch(async error => { if (await isRunning()) throw error; });
   else await run("systemctl", ["stop", UNIT], 60_000);
 }
 
@@ -116,7 +131,7 @@ function begin(next: "starting" | "stopping", work: () => Promise<void>) {
 
 /** Bring the service in line with the saved switch once per process (e.g. after a restart). */
 async function reconcile() {
-  if (shared.reconciled || CONTROL === "none") return;
+  if (shared.reconciled || await detectControl() === "none") return;
   shared.reconciled = true;
   const running = await isRunning();
   if (shared.transition) return;
@@ -125,7 +140,7 @@ async function reconcile() {
 }
 
 export async function searchStatus(): Promise<SearchStatus> {
-  if (CONTROL === "none") return { available: false, enabled: false, state: "stopped" };
+  if (await detectControl() === "none") return { available: false, enabled: readEnabled(), state: "stopped", reason: NOT_INSTALLED };
   await reconcile();
   // When nothing is in flight, report what is really running (it may have been stopped outside the app).
   if (!shared.transition && shared.state !== "error") shared.state = await isRunning() ? "running" : "stopped";
@@ -134,7 +149,7 @@ export async function searchStatus(): Promise<SearchStatus> {
 
 /** Turn search on or off; the service start/stop continues in the background. */
 export async function setSearchEnabled(enabled: boolean): Promise<SearchStatus> {
-  if (CONTROL === "none") throw new Error("Web search is not available on this server.");
+  if (await detectControl() === "none") throw new Error(NOT_INSTALLED);
   await reconcile();
   await shared.transition?.catch(() => {});
   writeEnabled(enabled);
@@ -146,7 +161,7 @@ export async function setSearchEnabled(enabled: boolean): Promise<SearchStatus> 
 
 /** Top results for a question, or none when search is off, still starting, or failing. */
 export async function webSearch(query: string, signal?: AbortSignal): Promise<SearchResult[]> {
-  if (CONTROL === "none" || !readEnabled()) return [];
+  if (!readEnabled() || await detectControl() === "none") return [];
   await reconcile();
   if (shared.transition) return [];
   const url = `${URL_BASE}/search?${new URLSearchParams({ q: query.slice(0, 300), format: "json", safesearch: "1" })}`;
