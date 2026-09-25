@@ -2,6 +2,7 @@ import { getDb } from "../db";
 import { initStore, type SqlStore } from "./store";
 import { handleApi, type AiService } from "./service";
 import { captureActiveProvider, streamChat, generateJSON } from "../providers/server";
+import { webSearch } from "../search/searxng";
 
 const store: SqlStore = {
   async all<T>(sql: string, params: unknown[] = []) { return getDb().prepare(sql).all(...params) as T[]; },
@@ -17,6 +18,7 @@ const ai: AiService = {
   async capture() { return captureActiveProvider(); },
   async stream(messages, opts) { return (await streamChat({ ...opts, messages, profile: opts.profile as Awaited<ReturnType<typeof captureActiveProvider>> })).body!; },
   async json(prompt, signal) { return generateJSON(prompt, { signal }); },
+  search: webSearch,
 };
 let initialized: Promise<void> | undefined;
 let queue = Promise.resolve();

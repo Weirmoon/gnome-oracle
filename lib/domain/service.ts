@@ -5,14 +5,33 @@ import { buildPrompt } from "./generation";
 import type { Character } from "./types";
 import { isCritterId, type CritterId } from "../../components/oracle/critters/catalog";
 import { CRITTER_PROMPTS, pickFallbackLine } from "../../components/oracle/critters/prompts.server";
+import { ReasoningSplitter, stripReasoning } from "../providers/reasoning";
+import { SOURCES_HEADER, encodeSources, searchContext, type SearchResult } from "../search/format";
 
 export interface AiService {
   capture(): Promise<unknown>;
-  stream(messages: ChatMessage[], opts: { temperature?: number; numPredict?: number; signal?: AbortSignal; profile?: unknown }): Promise<ReadableStream<Uint8Array>>;
+  stream(messages: ChatMessage[], opts: { temperature?: number; numPredict?: number; think?: boolean; reasoning?: boolean; grounding?: string; signal?: AbortSignal; profile?: unknown }): Promise<ReadableStream<Uint8Array>>;
   json(prompt: string, signal?: AbortSignal): Promise<unknown>;
+  /** Web results for a question when search is switched on; absent where search isn't supported. */
+  search?(query: string, signal?: AbortSignal): Promise<SearchResult[]>;
 }
 export interface Services { store: SqlStore; ai: AiService }
 const json = (value: unknown, status = 200) => Response.json(value, { status });
+/**
+ * Serious mode trades some wackiness for accuracy: a cooler temperature, an
+ * accuracy-first instruction, and the answer worked out step by step first.
+ * Fun mode (the default) leaves each persona's own temperature alone.
+ */
+const SERIOUS_TEMPERATURE = 0.35;
+const SERIOUS_PROMPT = " Serious mode: accuracy comes first. Double-check facts and numbers, say so if you are unsure, and keep the character voice light.";
+const tone = (c: Character, serious: unknown) => serious === true
+  ? { temperature: Math.min(c.temperature, SERIOUS_TEMPERATURE), extra: SERIOUS_PROMPT }
+  : { temperature: c.temperature, extra: "" };
+/** Captured profiles are either a connection (web) or a native snapshot wrapping one. */
+const thinks = (captured: unknown) => {
+  const value = captured as { thinking?: string; profile?: { thinking?: string } } | null;
+  return (value?.thinking ?? value?.profile?.thinking) === "on";
+};
 const enc = new TextEncoder();
 const promptFor = (c: Character, style?: string, mood?: string) => c.system_prompt + " Stay in character. Reply in 2-3 short sentences; do not reveal internal reasoning. " + (style === "oracle-chaos" ? "Be weird, dramatic and surprising but coherent." : style === "mostly-comedy" ? "Mostly comedy, with at most one useful fact." : "Give a useful answer first, with character humor.") + (c.meta.moods.includes(mood ?? "") ? ` Mood: ${mood}.` : "");
 
@@ -38,13 +57,13 @@ function persistedStream(source: ReadableStream<Uint8Array>, s: SqlStore, id: nu
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
-        if (signal?.aborted) { await reader.cancel(); await save("incomplete"); controller.close(); return; }
+        if (signal?.aborted) { await reader.cancel(); answer = stripReasoning(answer); await save("incomplete"); controller.close(); return; }
         const { value, done } = await reader.read();
-        if (done) { answer += decoder.decode(); await save(signal?.aborted ? "incomplete" : "complete"); controller.close(); }
+        if (done) { answer = stripReasoning(answer + decoder.decode()); await save(signal?.aborted ? "incomplete" : "complete"); controller.close(); }
         else { answer += decoder.decode(value, { stream: true }); controller.enqueue(value); }
-      } catch (error) { await save("incomplete", "Response interrupted. Retry explicitly."); controller.error(error); }
+      } catch (error) { answer = stripReasoning(answer); await save("incomplete", "Response interrupted. Retry explicitly."); controller.error(error); }
     },
-    async cancel(reason) { try { await reader.cancel(reason); } finally { await save("incomplete"); } },
+    async cancel(reason) { try { await reader.cancel(reason); } finally { answer = stripReasoning(answer); await save("incomplete"); } },
   });
 }
 
@@ -92,11 +111,13 @@ export async function handleApi(path: string, init: RequestInit, { store: s, ai 
       if (!c) return json({ error: "Choose a persona." }, 400);
       const profile = await ai.capture();
       const budget = (profile as { contextBudget?: number } | null)?.contextBudget ?? 6000;
-      const messages = consultationContext(promptFor(c, b.responseStyle, b.mood), question, current?.messages ?? [], budget);
-      const source = await ai.stream(messages, { temperature: c.temperature, signal: init.signal ?? undefined, profile });
+      const { temperature, extra } = tone(c, b.serious);
+      const found = await ai.search?.(question, init.signal ?? undefined) ?? [];
+      const messages = consultationContext(promptFor(c, b.responseStyle, b.mood) + extra, question, current?.messages ?? [], budget);
+      const source = await ai.stream(messages, { temperature, think: b.serious === true || thinks(profile), reasoning: true, grounding: searchContext(found), signal: init.signal ?? undefined, profile });
       const cid = current?.id ?? await newConsultation(s, question, c);
       const id = await addExchange(s, cid, c, question);
-      return new Response(persistedStream(source, s, id, init.signal ?? undefined), { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-History-Id": String(id), "X-Consultation-Id": String(cid), "X-Accel-Buffering": "no" } });
+      return new Response(persistedStream(source, s, id, init.signal ?? undefined), { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-History-Id": String(id), "X-Consultation-Id": String(cid), "X-Accel-Buffering": "no", ...(found.length ? { [SOURCES_HEADER]: encodeSources(found) } : {}) } });
     }
     if (route === "/api/quip" && method === "POST") {
       const b = await body(init);
@@ -104,7 +125,7 @@ export async function handleApi(path: string, init: RequestInit, { store: s, ai 
       const fallback = () => new Response(pickFallbackLine(b.critterId));
       if (b.generated !== true) return fallback();
       const c = await getCharacter(s, Number(b.characterId)); if (!c) return fallback();
-      try { return new Response(await ai.stream([{ role: "system", content: promptFor(c, "mostly-comedy", b.mood) + " " + CRITTER_PROMPTS[b.critterId as CritterId].hint + " Exactly one line, at most 15 words." }, { role: "user", content: "React now." }], { temperature: c.temperature, numPredict: 60, signal: init.signal ?? undefined })); } catch { return fallback(); }
+      try { return new Response(await ai.stream([{ role: "system", content: promptFor(c, "mostly-comedy", b.mood) + " " + CRITTER_PROMPTS[b.critterId as CritterId].hint + " Exactly one line, at most 15 words." }, { role: "user", content: "React now." }], { temperature: c.temperature, numPredict: 60, think: false, signal: init.signal ?? undefined })); } catch { return fallback(); }
     }
     if (route === "/api/council" && method === "POST") return await council(await body(init), s, ai, init.signal ?? undefined);
     if (route === "/api/backup" && method === "GET") return json(await s.transaction(async () => ({ version: 1, characters: (await s.all("SELECT * FROM characters WHERE is_seed=0")).map(hydrate), consultations: await s.all("SELECT * FROM consultations"), history: await s.all("SELECT * FROM history") })));
@@ -143,6 +164,9 @@ async function council(b: any, s: SqlStore, ai: AiService, signal?: AbortSignal)
       const send = (event: unknown) => { if (!local.signal.aborted) controller.enqueue(enc.encode(JSON.stringify(event) + "\n")); };
       try {
         send({ type: "session", consultationId: cid });
+        // One search serves all six turns: they share the question.
+        const found = await ai.search?.(question, local.signal) ?? [];
+        if (found.length) send({ type: "sources", sources: found.map(({ title, url }) => ({ title, url })) });
         const turns = previous ? [b.retryIndex] : [0, 1, 2, 3, 4, 5];
         for (const index of turns) {
           if (local.signal.aborted) break;
@@ -153,11 +177,17 @@ async function council(b: any, s: SqlStore, ai: AiService, signal?: AbortSignal)
           send({ type: "speaker", index, historyId: id, character: c, phase: index < 3 ? "answer" : "rebuttal" });
           let full = "";
           try {
-            const source = await ai.stream([{ role: "system", content: promptFor(c, b.responseStyle) }, { role: "user", content }], { temperature: c.temperature, signal: local.signal, profile });
-            const reader = source.getReader(), decoder = new TextDecoder();
-            while (!local.signal.aborted) { const { done, value } = await reader.read(); if (done) break; const text = decoder.decode(value, { stream: true }); full += text; send({ type: "text", index, text }); }
+            const { temperature, extra } = tone(c, b.serious);
+            const source = await ai.stream([{ role: "system", content: promptFor(c, b.responseStyle) + extra }, { role: "user", content }], { temperature, think: b.serious === true || thinks(profile), reasoning: true, grounding: searchContext(found), signal: local.signal, profile });
+            const reader = source.getReader(), decoder = new TextDecoder(), splitter = new ReasoningSplitter();
+            const relay = (chunk: string) => {
+              const { answer, reasoning } = splitter.push(chunk);
+              if (reasoning) send({ type: "thinking", index, text: reasoning });
+              if (answer) { full += answer; send({ type: "text", index, text: answer }); }
+            };
+            while (!local.signal.aborted) { const { done, value } = await reader.read(); if (done) break; relay(decoder.decode(value, { stream: true })); }
             if (local.signal.aborted) await reader.cancel();
-            full += decoder.decode();
+            relay(decoder.decode());
             await s.run("UPDATE history SET answer=?,status=? WHERE id=?", [full, local.signal.aborted ? "incomplete" : "complete", id]);
             send({ type: "done", index, historyId: id });
           } catch (error) {

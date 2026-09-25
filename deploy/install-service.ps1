@@ -15,8 +15,8 @@ param(
     [string]$ServiceName = "GnomeOracle",
     [string]$InstallPath = "C:\Services\GnomeOracle",
     [int]$Port = 8080,
-    [string]$OllamaModel = "gemma2:2b",
-    [int]$OllamaNumCtx = 8192,
+    [string]$OllamaModel = "qwen3:4b-instruct",
+    [int]$OllamaNumCtx = 4096,
     [string]$OllamaUrl = "http://127.0.0.1:11434",
     [string]$WinSWUrl = "https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe",
     [switch]$SkipBuild

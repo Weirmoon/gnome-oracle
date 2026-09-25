@@ -1,7 +1,8 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { ProviderError, validateProfile, type ProviderConnection, type ProviderProfile } from "./types";
+import { PROFILE_TUNING_DEFAULTS, ProviderError, validateProfile, type ProviderConnection, type ProviderProfile } from "./types";
+import { DEFAULT_OLLAMA_MODEL } from "./catalog";
 
 interface EncryptedKey { iv: string; tag: string; ciphertext: string }
 interface StoredProfile extends Omit<ProviderProfile, "hasApiKey"> { secret?: EncryptedKey }
@@ -34,15 +35,16 @@ function decrypt(secret: EncryptedKey, id: string): string {
 }
 
 function initialStore(): ProviderStore {
-  const value = Number.parseInt(process.env.OLLAMA_NUM_CTX || "8192", 10);
+  const value = Number.parseInt(process.env.OLLAMA_NUM_CTX || "4096", 10);
   return {
     version: 1,
     activeProfileId: "ollama-default",
     profiles: [{
       id: "ollama-default", name: "Local Ollama", kind: "ollama",
       baseUrl: (process.env.OLLAMA_URL || "http://127.0.0.1:11434").replace(/\/+$/, ""),
-      model: process.env.OLLAMA_MODEL || "gemma2:2b",
-      contextBudget: Number.isFinite(value) && value >= 512 ? Math.min(value, 131072) : 8192,
+      model: process.env.OLLAMA_MODEL || DEFAULT_OLLAMA_MODEL,
+      contextBudget: Number.isFinite(value) && value >= 512 ? Math.min(value, 131072) : 4096,
+      ...PROFILE_TUNING_DEFAULTS,
     }],
   };
 }
@@ -53,6 +55,8 @@ function readStore(): ProviderStore {
   try {
     const store = JSON.parse(fs.readFileSync(file, "utf8")) as ProviderStore;
     if (store.version !== 1 || !Array.isArray(store.profiles) || !store.profiles.length || !store.profiles.some(p => p.id === store.activeProfileId)) throw new Error();
+    // Profiles saved before tuning fields existed pick up the defaults.
+    store.profiles = store.profiles.map(p => ({ ...PROFILE_TUNING_DEFAULTS, ...p }));
     return store;
   } catch { throw new ProviderError("The saved connections could not be read. Restore the provider configuration from a server backup.", 503); }
 }
@@ -71,7 +75,8 @@ function writeStore(store: ProviderStore) {
 }
 
 function redact(profile: StoredProfile): ProviderProfile {
-  return { id: profile.id, name: profile.name, kind: profile.kind, baseUrl: profile.baseUrl, model: profile.model, contextBudget: profile.contextBudget, hasApiKey: !!profile.secret };
+  const { secret, ...details } = profile;
+  return { ...details, hasApiKey: !!secret };
 }
 
 export function listProfiles(): { profiles: ProviderProfile[]; activeProfileId: string } {

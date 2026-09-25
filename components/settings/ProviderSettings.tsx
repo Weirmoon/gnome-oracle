@@ -2,11 +2,18 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { apiFetch } from "@/lib/platform/client";
-import { PROVIDER_DEFAULTS, type ProviderKind, type ProviderModel, type ProviderProfile } from "@/lib/providers/types";
+import { PROFILE_TUNING_DEFAULTS, PROVIDER_DEFAULTS, type ProviderKind, type ProviderModel, type ProviderProfile } from "@/lib/providers/types";
+import { MODEL_CATALOG } from "@/lib/providers/catalog";
+import SearchSettings from "./SearchSettings";
+import ModelGuide from "./ModelGuide";
+import type { ModelInfo, ModelSwitch, PullProgress } from "@/lib/providers/protocol";
 
 type Draft = Omit<ProviderProfile, "id"> & { id?: string; apiKey: string; clearApiKey: boolean };
-type Status = { configured: boolean; managementEnabled: boolean; native?: boolean; activeProfile?: Pick<ProviderProfile, "id" | "name" | "kind" | "model"> };
-const blankProfile = (kind: ProviderKind = "ollama"): Draft => ({ ...PROVIDER_DEFAULTS[kind], kind, contextBudget: 6000, hasApiKey: false, apiKey: "", clearApiKey: false });
+type Status = { configured: boolean; managementEnabled: boolean; defaultPassword?: boolean; native?: boolean; activeProfile?: Pick<ProviderProfile, "id" | "name" | "kind" | "model"> };
+const blankProfile = (kind: ProviderKind = "ollama"): Draft => ({ ...PROVIDER_DEFAULTS[kind], ...PROFILE_TUNING_DEFAULTS, kind, contextBudget: 4096, hasApiKey: false, apiKey: "", clearApiKey: false });
+type Pull = { model: string; status: string; completed?: number; total?: number; controller: AbortController };
+const KEEP_ALIVE_CHOICES = [["5m", "5 minutes"], ["30m", "30 minutes"], ["2h", "2 hours"], ["-1", "Forever"]] as const;
+const SPEED_LABEL = { fastest: "⚡⚡⚡", fast: "⚡⚡", moderate: "⚡" } as const;
 const fieldStyle = { display: "grid", gap: 6 } as const;
 const inputStyle = { width: "100%", minHeight: 42 } as const;
 
@@ -21,10 +28,17 @@ export default function ProviderSettings() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [modelInfo, setModelInfo] = useState<(ModelInfo & { missing?: boolean }) | null>(null);
+  const [pull, setPull] = useState<Pull | null>(null);
+  const [activeModels, setActiveModels] = useState<ProviderModel[]>([]);
   // Credentials live only in this component’s memory, never browser storage.
   const adminToken = useRef("");
   const modelListId = useId();
   const native = status?.native === true;
+  const ollama = draft.kind === "ollama";
+  const installed = new Set(models.map(model => model.id));
+  const canThink = modelInfo?.capabilities.includes("thinking") ?? false;
+  const activeProfile = profiles.find(profile => profile.id === activeId);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,6 +90,23 @@ export default function ProviderSettings() {
     finally { setBusy(false); }
   }
 
+  function describeSwitch(modelSwitch?: ModelSwitch): string {
+    if (!modelSwitch) return "";
+    const closed = modelSwitch.unloaded.length ? ` Closed ${modelSwitch.unloaded.join(", ")}.` : "";
+    return `${closed}${modelSwitch.loading ? ` Loading ${modelSwitch.loading} in the background.` : ""}`;
+  }
+
+  /** Change only the active connection's model; every other setting carries over. */
+  async function switchModel(model: string) {
+    if (!activeProfile || model === activeProfile.model) return;
+    await perform(async () => {
+      const { hasApiKey: _hasApiKey, ...current } = activeProfile;
+      const result = await request("", "POST", { profile: { ...current, model } });
+      await reload(draft.id === current.id ? current.id : undefined);
+      setNotice(`Now using ${model}.${describeSwitch(result.modelSwitch)}`);
+    });
+  }
+
   async function reload(selectedId?: string) {
     const list = await request();
     setProfiles(list.profiles);
@@ -93,14 +124,76 @@ export default function ProviderSettings() {
     return { profile: value };
   }
 
+  // Ask Ollama what the chosen model can do, so Thinking is offered only when it works.
+  useEffect(() => {
+    setModelInfo(null);
+    if (!unlocked || !ollama || !draft.model.trim()) return;
+    const timer = setTimeout(() => {
+      request("/show", "POST", { ...payload(), model: draft.model.trim() })
+        .then(result => setModelInfo(result.info))
+        .catch(() => setModelInfo({ capabilities: [], missing: true }));
+    }, 500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unlocked, ollama, draft.model, draft.baseUrl]);
+
+  // Models the quick switcher can offer: whatever the active connection has installed.
+  useEffect(() => {
+    if (!unlocked || !activeId) return;
+    request("/models", "POST", { profileId: activeId }).then(result => setActiveModels(result.models)).catch(() => setActiveModels([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unlocked, activeId, activeProfile?.baseUrl, models.length]);
+
+  // Know which recommended models are already installed without an extra click.
+  useEffect(() => {
+    if (!unlocked || !ollama) return;
+    request("/models", "POST", payload()).then(result => setModels(result.models)).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unlocked, ollama, draft.id, draft.baseUrl]);
+
+  async function download(model: string) {
+    const controller = new AbortController();
+    setPull({ model, status: "starting", controller }); setError(""); setNotice("");
+    try {
+      const response = await apiFetch("/api/providers/pull", {
+        method: "POST", signal: controller.signal,
+        headers: { "Content-Type": "application/json", ...(adminToken.current ? { Authorization: `Bearer ${adminToken.current}` } : {}) },
+        body: JSON.stringify({ ...payload(), model }),
+      });
+      if (!response.ok || !response.body) throw new Error((await response.json().catch(() => ({}))).error || "The download could not start.");
+      const reader = response.body.getReader(), decoder = new TextDecoder();
+      let buffer = "", last: PullProgress | null = null;
+      for (;;) {
+        const { done, value } = await reader.read();
+        buffer += decoder.decode(value, { stream: !done });
+        let newline: number;
+        while ((newline = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, newline).trim(); buffer = buffer.slice(newline + 1);
+          if (!line) continue;
+          const progress = JSON.parse(line) as PullProgress;
+          if (progress.error) throw new Error(progress.error);
+          last = progress;
+          setPull(current => current && { ...current, status: progress.status, completed: progress.completed ?? current.completed, total: progress.total ?? current.total });
+        }
+        if (done) break;
+      }
+      if (last?.status !== "success") throw new Error("The download ended before it finished. Try again.");
+      setModels((await request("/models", "POST", payload())).models);
+      setNotice(`${model} is downloaded. Choose “Use”, then save the connection.`);
+    } catch (value) {
+      setError(controller.signal.aborted ? "Download cancelled." : value instanceof Error ? value.message : "The download failed.");
+    } finally { setPull(null); }
+  }
+
   return <section className="panel" aria-labelledby="provider-settings-title" style={{ marginTop: 18 }}>
     <h2 id="provider-settings-title">AI connections</h2>
     <p className="muted">Active: <strong>{status?.activeProfile ? `${status.activeProfile.name} · ${status.activeProfile.model}` : "Loading…"}</strong></p>
+    <div style={{ marginBottom: 16 }}><ModelGuide selected={status?.activeProfile?.model ?? ""} /></div>
     {error && <p role="alert" style={{ color: "#ffb3b3" }}>{error}</p>}
     {notice && <p role="status" style={{ color: "var(--accent2)" }}>{notice}</p>}
     {!unlocked ? <div style={{ display: "grid", gap: 10 }}>
-      {status && !status.managementEnabled && <p>Connection management is locked until the server administrator configures an administrator token.</p>}
-      <label style={fieldStyle}>Administrator token
+      {status?.defaultPassword && <p className="muted">The default password is <strong>Gnome</strong>. Change it by setting <code>GNOME_ADMIN_TOKEN</code> on the server.</p>}
+      <label style={fieldStyle}>Password
         <input type="password" autoComplete="off" value={tokenInput} onChange={event => setTokenInput(event.target.value)} style={inputStyle} />
       </label>
       <button type="button" disabled={busy || !tokenInput || !status?.managementEnabled} onClick={() => void perform(async () => {
@@ -112,7 +205,7 @@ export default function ProviderSettings() {
         const selected = list.profiles.find((profile: ProviderProfile) => profile.id === list.activeProfileId);
         if (selected) select(selected);
       })}>Unlock connection settings</button>
-      <details><summary>Server setup</summary><p>Set <code>GNOME_ADMIN_TOKEN</code> and <code>GNOME_DEPLOYMENT_SECRET</code> to different secrets of at least 32 characters. Keep the deployment secret stable to unlock saved API keys after a restart. Use HTTPS when accessing these settings over a network.</p></details>
+      <details><summary>Server setup</summary><p>Set <code>GNOME_ADMIN_TOKEN</code> to change the password from the default (<strong>Gnome</strong>); a long random value is safest. Set <code>GNOME_DEPLOYMENT_SECRET</code> to a different secret of at least 32 characters before saving API keys. Keep the deployment secret stable to unlock saved API keys after a restart. Use HTTPS when accessing these settings over a network.</p></details>
     </div> : <>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
         <label style={{ ...fieldStyle, flex: "1 1 220px" }}>Saved connection
@@ -123,6 +216,17 @@ export default function ProviderSettings() {
         </label>
         {!native && <button type="button" disabled={busy} onClick={() => { adminToken.current = ""; setTokenInput(""); setProfiles([]); setDraft(blankProfile()); setUnlocked(false); }}>Lock settings</button>}
       </div>
+      {activeProfile && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end", marginBottom: 16 }}>
+        <label style={{ ...fieldStyle, flex: "1 1 220px" }}>Switch model
+          <select aria-label="Switch the active model" value={activeProfile.model} disabled={busy || !!pull} onChange={event => void switchModel(event.target.value)} style={inputStyle}>
+            {!activeModels.some(model => model.id === activeProfile.model) && <option value={activeProfile.model}>{activeProfile.model}</option>}
+            {activeModels.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
+          </select>
+        </label>
+        <p className="muted" style={{ flex: "1 1 220px", margin: 0 }}>Applies immediately to {activeProfile.name}.{activeProfile.kind === "ollama" ? " The model that is loaded now is closed first to free memory." : ""}</p>
+      </div>}
+      {status?.defaultPassword && !native && <p role="alert" style={{ color: "#ffd9a0", marginTop: 0 }}>⚠️ You’re using the default password, <strong>Gnome</strong>. Anyone who can open this site can change models and download new ones. Set <code>GNOME_ADMIN_TOKEN</code> on the server to change it.</p>}
+      <div style={{ marginBottom: 16 }}><SearchSettings adminToken={adminToken.current} /></div>
       <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: "grid", gap: 14 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 14 }}>
           <label style={fieldStyle}>Profile name<input style={inputStyle} maxLength={80} value={draft.name} onChange={event => setDraft(value => ({ ...value, name: event.target.value }))} /></label>
@@ -146,16 +250,62 @@ export default function ProviderSettings() {
             setNotice(result.models.length ? `${result.models.length} models found. Choose one in the model field.` : "No models found. Load a model in your server or enter its identifier.");
           })}>Load models</button>
         </div>
-        <label style={fieldStyle}>Context budget (tokens)<input style={inputStyle} type="number" min={512} max={131072} step={256} value={draft.contextBudget} onChange={event => setDraft(value => ({ ...value, contextBudget: Number(event.target.value) }))} /></label>
+        {ollama && <details open={!draft.model}>
+          <summary>Recommended small models</summary>
+          <p className="muted">Sized for CPU-only servers. RAM figures include the app and a 4k context.</p>
+          <div style={{ display: "grid" }}>{MODEL_CATALOG.map(model => {
+            const active = pull?.model === model.id;
+            const percent = active && pull?.total ? Math.round((pull.completed ?? 0) / pull.total * 100) : null;
+            return <div key={model.id} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+              <div style={{ flex: "1 1 240px", minWidth: 0 }}>
+                <strong>{model.label}</strong> <code>{model.id}</code>{installed.has(model.id) && <span title="Installed"> ✓</span>}
+                <div className="muted" style={{ fontSize: "0.85em" }}>{model.sizeGb} GB · needs ~{model.minRamGb} GB RAM · {SPEED_LABEL[model.speed]}{model.thinking ? " · 🧠 thinks" : ""} · {model.note}</div>
+                {active && <div role="status" style={{ fontSize: "0.85em" }}>
+                  <progress max={100} value={percent ?? undefined} style={{ width: "100%" }} /> {pull?.status}{percent !== null ? ` · ${percent}%` : ""}
+                </div>}
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button type="button" disabled={draft.model === model.id} onClick={() => setDraft(value => ({ ...value, model: model.id }))}>{draft.model === model.id ? "Selected" : "Use"}</button>
+                {active ? <button type="button" onClick={() => pull?.controller.abort()}>Cancel</button>
+                  : !installed.has(model.id) && <button type="button" disabled={!!pull} onClick={() => void download(model.id)}>Download</button>}
+              </div>
+            </div>;
+          })}</div>
+        </details>}
+        <div style={{ display: "grid", gap: 8 }}>
+          <label><input type="checkbox" checked={draft.thinking === "on"} onChange={event => setDraft(value => ({ ...value, thinking: event.target.checked ? "on" : "off" }))} /> Let the oracle think before answering</label>
+          <p className="muted" style={{ margin: 0 }}>{!ollama ? "Reasoning models think natively; others work the answer out step by step first."
+            : !modelInfo ? "Checking what this model can do…"
+            : modelInfo.missing ? "This model isn’t downloaded yet."
+            : canThink ? "🧠 This model thinks natively."
+            : "This model can’t think natively, so it first works the answer out step by step in a separate pass (roughly doubles the time)."}
+            {" "}The working stays tucked away under “The oracle ponders”. Critter quips never think. Serious mode always works answers out.</p>
+          {draft.thinking === "on" && <label style={fieldStyle}>Thinking budget (tokens)<input style={inputStyle} type="number" min={256} max={4096} step={128} value={draft.thinkingBudget} onChange={event => setDraft(value => ({ ...value, thinkingBudget: Number(event.target.value) }))} /></label>}
+        </div>
+        <details>
+          <summary>Performance</summary>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 200px), 1fr))", gap: 14, marginTop: 10 }}>
+            <label style={fieldStyle}>Context budget (tokens)<input style={inputStyle} type="number" min={512} max={131072} step={256} value={draft.contextBudget} onChange={event => setDraft(value => ({ ...value, contextBudget: Number(event.target.value) }))} /></label>
+            <label style={fieldStyle}>Reply length (tokens)<input style={inputStyle} type="number" min={64} max={2048} step={32} value={draft.replyLength} onChange={event => setDraft(value => ({ ...value, replyLength: Number(event.target.value) }))} /></label>
+            {ollama && <label style={fieldStyle}>Keep model loaded<select style={inputStyle} value={draft.keepAlive} onChange={event => setDraft(value => ({ ...value, keepAlive: event.target.value }))}>
+              {KEEP_ALIVE_CHOICES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              {!KEEP_ALIVE_CHOICES.some(([value]) => value === draft.keepAlive) && <option value={draft.keepAlive}>{draft.keepAlive}</option>}
+            </select></label>}
+            {ollama && <label style={fieldStyle}>CPU threads<input style={inputStyle} type="number" min={1} max={64} placeholder="Auto" value={draft.numThread ?? ""} onChange={event => setDraft(value => ({ ...value, numThread: event.target.value ? Number(event.target.value) : undefined }))} /></label>}
+          </div>
+          <p className="muted">On a 6 GB server, keep the context at 4096 or less. A smaller context is also faster on CPU. Keeping the model loaded avoids a slow reload after idle time.</p>
+        </details>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           <button type="button" onClick={() => void perform(async () => {
             const result = await request("", "POST", payload());
             setDraft(value => ({ ...value, apiKey: "", clearApiKey: false }));
             await reload(result.profile.id);
-            setNotice("Connection saved. Use ‘Make active’ to select it for new requests.");
+            setNotice(result.profile.id === activeId
+              ? `Connection saved and in use.${describeSwitch(result.modelSwitch)}`
+              : "Connection saved. Use ‘Make active’ to select it for new requests.");
           })}>Save connection</button>
           <button type="button" onClick={() => void perform(async () => { await request("/test", "POST", payload()); setNotice("Connected successfully. The selected model answered the test."); })}>Test connection</button>
-          {draft.id && draft.id !== activeId && <button type="button" onClick={() => void perform(async () => { await request("", "PATCH", { activeProfileId: draft.id }); await reload(); setNotice("Connection activated for new requests. Unsaved edits have not been applied."); })}>Make active</button>}
+          {draft.id && draft.id !== activeId && <button type="button" onClick={() => void perform(async () => { const result = await request("", "PATCH", { activeProfileId: draft.id }); await reload(); setNotice(`Connection activated for new requests. Unsaved edits have not been applied.${describeSwitch(result.modelSwitch)}`); })}>Make active</button>}
           {draft.id && draft.id !== activeId && <button type="button" onClick={() => void perform(async () => { await request("", "DELETE", { id: draft.id }); await reload(activeId); setNotice("Connection deleted."); })}>Delete connection</button>}
         </div>
       </fieldset>

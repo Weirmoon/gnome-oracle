@@ -1,15 +1,18 @@
 import { timingSafeEqual } from "node:crypto";
 import { ProviderError } from "./types";
 
-export function managementEnabled(): boolean { return (process.env.GNOME_ADMIN_TOKEN?.length ?? 0) >= 32; }
+/** Used until the server sets GNOME_ADMIN_TOKEN; Settings warns while it is in use. */
+export const DEFAULT_ADMIN_PASSWORD = "Gnome";
+
+export function managementEnabled(): boolean { return true; }
+export function usingDefaultPassword(): boolean { return !process.env.GNOME_ADMIN_TOKEN; }
 
 export function requireProviderAdmin(request: Request): void {
-  const expected = process.env.GNOME_ADMIN_TOKEN;
-  if (!expected || expected.length < 32) throw new ProviderError("Connection settings are locked. Set GNOME_ADMIN_TOKEN to a secret of at least 32 characters on the server.", 503);
+  const expected = process.env.GNOME_ADMIN_TOKEN || DEFAULT_ADMIN_PASSWORD;
   const authorization = request.headers.get("Authorization") || "";
   const supplied = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
   if (Buffer.byteLength(supplied) !== Buffer.byteLength(expected) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))) {
-    throw new ProviderError("Enter the administrator token to manage AI connections.", 401);
+    throw new ProviderError("Enter the password to manage AI connections.", 401);
   }
   // Non-cookie bearer authentication cannot be forged by cross-origin forms.
   const origin = request.headers.get("Origin");

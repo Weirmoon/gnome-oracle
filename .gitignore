@@ -136,3 +136,7 @@ dist-native/
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Per-machine web search state and SearXNG config (holds its secret key)
+data/search.json
+data/searxng/

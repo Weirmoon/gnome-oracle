@@ -15,5 +15,5 @@ export async function streamChat(options: ChatOptions & { profile?: ProviderConn
 
 export async function generateJSON(prompt: string, options: { signal?: AbortSignal; profile?: ProviderConnection } = {}): Promise<unknown> {
   const profile = options.profile ?? captureActiveProvider();
-  return generateProviderJSON(profile, prompt, options);
+  return generateProviderJSON(profile, prompt, { ...options, think: profile.thinking === "on" });
 }

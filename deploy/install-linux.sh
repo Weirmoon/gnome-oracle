@@ -7,8 +7,12 @@ INSTALL_PATH="${INSTALL_PATH:-/opt/gnome-oracle}"
 SERVICE_USER="${SERVICE_USER:-gnome-oracle}"
 PORT="${PORT:-8080}"
 SERVER_NAME="${SERVER_NAME:-$(hostname -f 2>/dev/null || hostname)}"
-OLLAMA_MODEL="${OLLAMA_MODEL:-gemma2:2b}"
-OLLAMA_NUM_CTX="${OLLAMA_NUM_CTX:-8192}"
+OLLAMA_MODEL="${OLLAMA_MODEL:-qwen3:4b-instruct}"
+OLLAMA_NUM_CTX="${OLLAMA_NUM_CTX:-4096}"
+SKIP_OLLAMA_TUNING="${SKIP_OLLAMA_TUNING:-0}"
+SKIP_SEARXNG="${SKIP_SEARXNG:-0}"
+SEARXNG_PORT="${SEARXNG_PORT:-8888}"
+SEARXNG_IMAGE="${SEARXNG_IMAGE:-searxng/searxng:latest}"
 OLLAMA_URL="${OLLAMA_URL:-http://127.0.0.1:11434}"
 NODE_MAJOR_TARGET="${NODE_MAJOR_TARGET:-22}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
@@ -181,6 +185,8 @@ Environment=NODE_ENV=production
 Environment=OLLAMA_MODEL=${OLLAMA_MODEL}
 Environment=OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX}
 Environment=OLLAMA_URL=${OLLAMA_URL}
+Environment=SEARXNG_CONTROL=$([[ "$SKIP_SEARXNG" == "1" ]] && echo none || echo systemd)
+Environment=SEARXNG_URL=http://127.0.0.1:${SEARXNG_PORT}
 ExecStart=${node_bin} server.js
 Restart=always
 RestartSec=10
@@ -234,6 +240,107 @@ EOF
   systemctl reload nginx
 }
 
+# Small-RAM tuning for the Ollama service. Each parallel slot multiplies
+# KV-cache memory, and a q8_0 KV cache roughly halves it again.
+tune_ollama() {
+  if [[ "$SKIP_OLLAMA_TUNING" == "1" ]] || ! systemctl list-unit-files ollama.service >/dev/null 2>&1; then
+    log "Skipping Ollama tuning."
+    return
+  fi
+
+  local dropin_dir="/etc/systemd/system/ollama.service.d"
+  mkdir -p "$dropin_dir"
+  cat >"$dropin_dir/gnome-oracle.conf" <<EOF
+[Service]
+Environment=OLLAMA_NUM_PARALLEL=1
+Environment=OLLAMA_MAX_LOADED_MODELS=1
+Environment=OLLAMA_FLASH_ATTENTION=1
+Environment=OLLAMA_KV_CACHE_TYPE=q8_0
+Environment=OLLAMA_KEEP_ALIVE=30m
+EOF
+  systemctl daemon-reload
+  systemctl restart ollama
+  wait_for_ollama
+
+  local ram_kb
+  ram_kb="$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"
+  if (( ram_kb > 0 && ram_kb < 8000000 )); then
+    log "Note: this server has $(( ram_kb / 1024 )) MB RAM. Keep the context at 4096 or less,"
+    log "      and consider a 2-4 GB swap file so a model load cannot exhaust memory."
+    if ! swapon --show 2>/dev/null | grep -q .; then
+      log "      No swap is active. Example: fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile"
+    fi
+  fi
+}
+
+# Web search: SearXNG in Docker behind a systemd unit that is NOT started at
+# boot. The app starts/stops it from Settings; a polkit rule lets the app's
+# user manage only that one unit, so the app never needs Docker or root.
+setup_searxng() {
+  if [[ "$SKIP_SEARXNG" == "1" ]]; then
+    log "Skipping SearXNG web search."
+    return
+  fi
+
+  if ! command -v docker >/dev/null 2>&1; then
+    log "Installing Docker for SearXNG..."
+    apt_install docker.io
+  fi
+  systemctl enable --now docker >/dev/null 2>&1 || true
+  apt_install polkitd >/dev/null 2>&1 || apt_install policykit-1
+
+  local config_dir="/etc/gnome-searxng"
+  mkdir -p "$config_dir"
+  if [[ ! -f "$config_dir/settings.yml" ]]; then
+    cat >"$config_dir/settings.yml" <<EOF
+use_default_settings: true
+server:
+  secret_key: "$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  limiter: false
+  image_proxy: false
+  public_instance: false
+search:
+  safe_search: 1
+  formats:
+    - html
+    - json
+EOF
+  fi
+
+  log "Downloading the SearXNG image (used only while web search is on)..."
+  docker pull "$SEARXNG_IMAGE"
+
+  local docker_bin
+  docker_bin="$(command -v docker)"
+  cat >/etc/systemd/system/gnome-searxng.service <<EOF
+[Unit]
+Description=SearXNG web search for Gnome Oracle (started and stopped from the app)
+After=docker.service
+Requires=docker.service
+
+[Service]
+ExecStartPre=-${docker_bin} rm -f gnome-searxng
+ExecStart=${docker_bin} run --rm --name gnome-searxng -p 127.0.0.1:${SEARXNG_PORT}:8080 -v ${config_dir}:/etc/searxng -e SEARXNG_BASE_URL=http://127.0.0.1:${SEARXNG_PORT}/ ${SEARXNG_IMAGE}
+ExecStop=${docker_bin} stop -t 5 gnome-searxng
+Restart=on-failure
+EOF
+
+  mkdir -p /etc/polkit-1/rules.d
+  cat >/etc/polkit-1/rules.d/50-gnome-searxng.rules <<EOF
+// Let Gnome Oracle start and stop its SearXNG unit, and nothing else.
+polkit.addRule(function (action, subject) {
+  if (action.id == "org.freedesktop.systemd1.manage-units" &&
+      action.lookup("unit") == "gnome-searxng.service" &&
+      subject.user == "${SERVICE_USER}") {
+    var verb = action.lookup("verb");
+    if (verb == "start" || verb == "stop" || verb == "restart") return polkit.Result.YES;
+  }
+});
+EOF
+  systemctl daemon-reload
+  systemctl restart polkit >/dev/null 2>&1 || true
+}
+
 pull_model() {
   if ! command -v ollama >/dev/null 2>&1; then
     log "Skipping model pull because ollama is unavailable."
@@ -257,6 +364,8 @@ main() {
   deploy_payload
   write_systemd_service
   write_nginx_config
+  tune_ollama
+  setup_searxng
   pull_model
 
   log ""

@@ -15,6 +15,10 @@ import ProviderSettings from "@/components/settings/ProviderSettings";
 import BackupSettings from "@/components/settings/BackupSettings";
 import { exportProphecyCard } from "@/lib/cards";
 import { emitBackgroundPulse } from "@/lib/background";
+import Pondering from "@/components/oracle/Pondering";
+import Sources from "@/components/oracle/Sources";
+import { SOURCES_HEADER, decodeSources, type SearchSource } from "@/lib/search/format";
+import { ReasoningSplitter } from "@/lib/providers/reasoning";
 
 // Loaded only when the settings panel opens, so the critter catalog stays out
 // of the initial "/" bundle.
@@ -73,6 +77,8 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
+  const [reasoning, setReasoning] = useState("");
+  const [sources, setSources] = useState<SearchSource[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [ttsSpeaking, setTtsSpeaking] = useState(false);
   const [burst, setBurst] = useState(0);
@@ -87,6 +93,7 @@ export default function Home() {
   /** "" = use whatever the persona specifies; otherwise force this body. */
   const [variantOverride, setVariantOverride] = useState<"" | AvatarVariant>("");
   const [responseStyle, setResponseStyle] = useState<ResponseStyle>("funny-useful");
+  const [serious, setSerious] = useState(false);
   const [mood, setMood] = useState("default");
   const [streamDone, setStreamDone] = useState(0);
   const [avatarPref, setAvatarPref] = useState<AvatarPref>("auto");
@@ -156,6 +163,7 @@ export default function Home() {
     setMusicOn(musicOnPref);
     setVolumes(vols);
     if (isResponseStyle(storedStyle)) setResponseStyle(storedStyle);
+    setSerious(localStorage.getItem("gnome.serious") === "1");
     if (storedMood) setMood(storedMood);
     if (Number.isFinite(storedOutfit)) setOutfitIndex(Math.max(0, Math.min(3, storedOutfit)));
     const storedVariant = localStorage.getItem("gnome.variant");
@@ -205,6 +213,8 @@ export default function Home() {
     setSelectedId(id);
     setConsultationId(null);
     setAnswer("");
+    setReasoning("");
+    setSources([]);
     setHistoryId(null);
     sound.resume();
     const next = characters.find((c) => c.id === id);
@@ -240,6 +250,11 @@ export default function Home() {
   function changeResponseStyle(value: ResponseStyle) {
     setResponseStyle(value);
     localStorage.setItem("gnome.responseStyle", value);
+  }
+
+  function toggleSerious(value: boolean) {
+    setSerious(value);
+    localStorage.setItem("gnome.serious", value ? "1" : "0");
   }
 
   function changeMood(value: string) {
@@ -307,6 +322,8 @@ export default function Home() {
     sound.whoosh();
     tts.begin();
     setAnswer("");
+    setReasoning("");
+    setSources([]);
     setFavorited(false);
     setHistoryId(null);
     setStreaming(true);
@@ -316,9 +333,15 @@ export default function Home() {
       const res = await apiFetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, characterId: selectedId, consultationId: consultationId ?? undefined, responseStyle, mood }),
+        body: JSON.stringify({ question, characterId: selectedId, consultationId: consultationId ?? undefined, responseStyle, mood, serious }),
         signal: ac.signal,
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setAnswer(`*The oracle stumbled.* ${data.error ?? "Try again, brave soul."}`);
+        return;
+      }
+      setSources(decodeSources(res.headers.get(SOURCES_HEADER)));
       const hid = res.headers.get("X-History-Id");
       if (hid) setHistoryId(Number(hid));
       const cid = res.headers.get("X-Consultation-Id");
@@ -329,10 +352,13 @@ export default function Home() {
       }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
+      const splitter = new ReasoningSplitter();
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        const text = decoder.decode(value, { stream: true });
+        const { answer: text, reasoning: thought } = splitter.push(decoder.decode(value, { stream: true }));
+        if (thought) setReasoning((prev) => prev + thought);
+        if (!text) continue;
         if (firstChunk) {
           firstChunk = false;
           sound.chime();
@@ -351,7 +377,7 @@ export default function Home() {
     } finally {
       setStreaming(false);
     }
-  }, [question, selectedId, consultationId, streaming, responseStyle, mood]);
+  }, [question, selectedId, consultationId, streaming, responseStyle, mood, serious]);
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter") ask();
@@ -396,6 +422,8 @@ export default function Home() {
     setConsultationId(null);
     setHistoryId(null);
     setAnswer("");
+    setReasoning("");
+    setSources([]);
     setQuestion("");
     setFortune("");
   }
@@ -558,6 +586,8 @@ export default function Home() {
           {answer ||
             (speaking ? "The oracle stirs…" : "Pick a persona and ask me something silly.")}
         </div>
+        <Pondering reasoning={reasoning} pondering={streaming && !answer} />
+        <Sources sources={sources} />
         {fortune && <p className="fortune" role="status">🔮 {fortune}</p>}
         {answer && !streaming && (
           <div className="row answeractions">
@@ -637,6 +667,11 @@ export default function Home() {
                 </option>
               ))}
             </select>
+          </label>
+
+          <label className="field" title="Cooler, more careful answers that are worked out step by step first. Slower, and less silly.">
+            <span><input type="checkbox" checked={serious} onChange={(e) => toggleSerious(e.target.checked)} /> 🎓 Serious mode</span>
+            <small className="muted">{serious ? "Accuracy first; answers take longer." : "Off: full-strength jokes."}</small>
           </label>
 
           <label className="field">

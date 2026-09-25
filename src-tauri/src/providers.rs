@@ -10,9 +10,24 @@ use tokio_util::sync::CancellationToken;
 pub struct Profile {
     id: String, name: String, kind: String, base_url: String, model: String,
     #[serde(default = "default_budget")] context_budget: u32,
+    #[serde(default = "default_thinking")] thinking: String,
+    #[serde(default = "default_thinking_budget")] thinking_budget: u32,
+    #[serde(default = "default_reply_length")] reply_length: u32,
+    #[serde(default = "default_keep_alive")] keep_alive: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")] num_thread: Option<u32>,
     #[serde(default)] has_api_key: bool,
 }
 fn default_budget() -> u32 { 12000 }
+// Keep these in step with PROFILE_TUNING_DEFAULTS in lib/providers/types.ts.
+fn default_thinking() -> String { "off".into() }
+fn default_thinking_budget() -> u32 { 1024 }
+fn default_reply_length() -> u32 { 200 }
+fn default_keep_alive() -> String { "30m".into() }
+fn valid_keep_alive(value: &str) -> bool {
+    if value == "-1" || value == "0" { return true; }
+    let (digits, unit) = value.split_at(value.len().saturating_sub(1));
+    !digits.is_empty() && digits.len() <= 4 && digits.bytes().all(|b| b.is_ascii_digit()) && ["s", "m", "h"].contains(&unit)
+}
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Profiles { profiles: Vec<Profile>, active_profile_id: Option<String> }
@@ -25,7 +40,8 @@ pub struct ProviderState {
 impl ProviderState {
     pub fn open(directory: PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
         let path = directory.join("providers.json");
-        let profiles = if path.exists() { serde_json::from_slice(&std::fs::read(path)?)? } else { Profiles { profiles: vec![Profile { id: "ollama-default".into(), name: "Local Ollama".into(), kind: "ollama".into(), base_url: "http://127.0.0.1:11434".into(), model: "gemma2:2b".into(), context_budget: 8192, has_api_key: false }], active_profile_id: Some("ollama-default".into()) } };
+        let profiles = if path.exists() { serde_json::from_slice(&std::fs::read(path)?)? } else { Profiles { profiles: vec![Profile { id: "ollama-default".into(), name: "Local Ollama".into(), kind: "ollama".into(), base_url: "http://127.0.0.1:11434".into(), model: "qwen3:4b-instruct".into(), context_budget: 4096,
+            thinking: default_thinking(), thinking_budget: default_thinking_budget(), reply_length: default_reply_length(), keep_alive: default_keep_alive(), num_thread: None, has_api_key: false }], active_profile_id: Some("ollama-default".into()) } };
         Ok(Self { directory, profiles: Mutex::new(profiles), snapshots: Mutex::default(), requests: Mutex::default(),
             client: reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).connect_timeout(Duration::from_secs(15)).timeout(Duration::from_secs(600)).build()? })
     }
@@ -68,8 +84,14 @@ fn parse_profile(raw: &Value, existing: Option<&Profile>) -> Result<Profile, Str
     let trimmed = url.path().trim_end_matches('/').to_string(); url.set_path(&trimmed);
     let name = value("name"); let model = value("model");
     if name.is_empty() || name.len() > 100 || model.len() > 300 { return Err("Enter a profile name (up to 100 characters) and valid model".into()); }
+    let thinking = match value("thinking").as_str() { "" | "off" => "off".to_string(), "on" => "on".to_string(), _ => return Err("Thinking must be on or off".into()) };
+    let keep_alive = match value("keepAlive") { v if v.is_empty() => default_keep_alive(), v => v };
+    if !valid_keep_alive(&keep_alive) { return Err("Keep-loaded time must look like 30m, 2h, 0, or -1 (forever)".into()); }
     Ok(Profile { id: existing.map(|p| p.id.clone()).unwrap_or_else(|| uuid::Uuid::new_v4().to_string()), name, kind, base_url: url.as_str().trim_end_matches('/').to_string(), model,
         context_budget: raw.get("contextBudget").and_then(Value::as_u64).unwrap_or(12000).clamp(1000, 128000) as u32,
+        thinking, thinking_budget: raw.get("thinkingBudget").and_then(Value::as_u64).unwrap_or(1024).clamp(256, 4096) as u32,
+        reply_length: raw.get("replyLength").and_then(Value::as_u64).unwrap_or(200).clamp(64, 2048) as u32,
+        keep_alive, num_thread: raw.get("numThread").and_then(Value::as_u64).map(|n| n.clamp(1, 64) as u32),
         has_api_key: existing.map(|p| p.has_api_key).unwrap_or(false) })
 }
 #[tauri::command]
@@ -132,12 +154,15 @@ pub async fn provider_http(state: State<'_, ProviderState>, token: String, opera
     let cancellation = CancellationToken::new();
     state.requests.lock().map_err(|_| "Connection unavailable")?.insert(request_id.clone(), cancellation.clone());
     let result = async {
-        let suffix = match (operation.as_str(), snapshot.profile.kind.as_str()) { ("models", "ollama") => "/api/tags", ("models", _) => "/models", ("chat", "ollama") => "/api/chat", ("chat", _) => "/chat/completions", _ => return Err("Unsupported provider operation".to_string()) };
+        let suffix = match (operation.as_str(), snapshot.profile.kind.as_str()) { ("models", "ollama") => "/api/tags", ("models", _) => "/models", ("chat", "ollama") => "/api/chat", ("chat", _) => "/chat/completions", ("show", "ollama") => "/api/show", ("pull", "ollama") => "/api/pull", ("ps", "ollama") => "/api/ps", ("generate", "ollama") => "/api/generate", _ => return Err("Unsupported provider operation".to_string()) };
         let url = format!("{}{}", snapshot.profile.base_url.trim_end_matches('/'), suffix);
-        let mut request = if operation == "models" { state.client.get(url) } else {
+        let mut request = if operation == "models" || operation == "ps" { state.client.get(url) } else {
             let mut body = body.ok_or("Missing chat request")?;
-            body["model"] = Value::String(snapshot.profile.model.clone());
-            state.client.post(url).json(&body)
+            // Chat always uses the snapshot's model; show/pull name their own target.
+            if operation == "chat" { body["model"] = Value::String(snapshot.profile.model.clone()); }
+            let request = state.client.post(url).json(&body);
+            // Downloads can take far longer than the client's default timeout.
+            if operation == "pull" { request.timeout(Duration::from_secs(6 * 3600)) } else { request }
         };
         if let Some(key) = snapshot.key { request = request.bearer_auth(key); }
         let response = tokio::select! {

@@ -489,3 +489,17 @@ button.danger {
 @media (prefers-reduced-motion: reduce) {
   .critter-quip { animation: none; }
 }
+
+/* Thinking-model reasoning, collapsed by default */
+.pondering { margin: 8px 0 0; font-size: 0.85em; opacity: 0.85; }
+.pondering summary { cursor: pointer; color: var(--accent2); list-style-position: inside; }
+.pondering-live { animation: pondering-pulse 1.6s ease-in-out infinite; }
+.pondering-text { white-space: pre-wrap; max-height: 16em; overflow-y: auto; margin: 6px 0 0; padding: 8px 10px; border-left: 2px solid var(--accent2); font-style: italic; }
+@keyframes pondering-pulse { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .pondering-live { animation: none; } }
+
+/* Web search sources under an answer */
+.sources { margin: 8px 0 0; font-size: 0.85em; }
+.sources summary { cursor: pointer; color: var(--accent2); }
+.sources ol { margin: 6px 0 0; padding-left: 1.4em; display: grid; gap: 4px; }
+.sources a { color: inherit; overflow-wrap: anywhere; }
